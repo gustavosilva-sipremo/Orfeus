@@ -1,5 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog"
-import { FolderOpen, FolderSync, MoreHorizontal, Music, Upload } from "lucide-react"
+import { FolderOpen, FolderSync, MoreHorizontal, Music, Upload, Youtube } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -14,11 +14,17 @@ import { useLibrary } from "@/stores/library"
 import { usePlayer } from "@/stores/player"
 
 const exportKey = "orfeus-export-dir"
+const playKey = "orfeus-play-mode"
 
 const audioFilter = [{ name: "Audio", extensions: ["mp3", "flac", "ogg", "opus", "wav", "m4a", "aac", "mp4", "alac"] }]
 
 export function LibraryView() {
-  const tracks = useLibrary((state) => state.tracks)
+  const allTracks = useLibrary((state) => state.tracks)
+  const shelves = useLibrary((state) => state.shelves)
+  const view = useLibrary((state) => state.view)
+  const shelfId = view.kind === "library" ? view.id : ""
+  const tracks = shelfId ? allTracks.filter((track) => track.shelfId === shelfId) : allTracks
+  const shelfName = shelves.find((shelf) => shelf.id === shelfId)?.name ?? "Library"
   const ready = useLibrary((state) => state.ready)
   const playlists = useLibrary((state) => state.playlists)
   const importPaths = useLibrary((state) => state.importPaths)
@@ -36,6 +42,8 @@ export function LibraryView() {
   const [watched, setWatched] = useState<WatchedFolder[]>([])
   const [volumeTrack, setVolumeTrack] = useState<Track | null>(null)
   const [exportDir, setExportDir] = useState(() => localStorage.getItem(exportKey) ?? "")
+  const [youtubeOpen, setYoutubeOpen] = useState(false)
+  const [playMode, setPlayMode] = useState<"one" | "sequence">(() => (localStorage.getItem(playKey) === "one" ? "one" : "sequence"))
 
   useEffect(() => {
     if (!api.desktop()) return
@@ -124,35 +132,62 @@ export function LibraryView() {
     })
   }
 
+  function setMode(mode: "one" | "sequence") {
+    localStorage.setItem(playKey, mode)
+    setPlayMode(mode)
+  }
+
+  function playVisible(visible: Track[], index: number) {
+    const track = visible[index]
+    if (!track) return
+    if (playMode === "one") void playTracks([track], 0)
+    else void playTracks(visible, index)
+  }
+
   function toggle(id: string) {
     setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))
   }
 
   return (
     <section className="flex h-full min-h-0 flex-col">
-      <header className="flex flex-wrap items-center gap-2 px-6 py-4">
-        <div className="mr-auto">
-          <h2 className="serif text-3xl">Library</h2>
+      <header className="flex flex-wrap items-center gap-2 px-4 py-3 sm:px-6 sm:py-4">
+        <div className="mr-auto min-w-0">
+          <h2 className="serif truncate text-2xl sm:text-3xl">{shelfName}</h2>
           <p className="text-base text-muted-foreground">{ready ? `${tracks.length} tracks` : "Opening the library…"}</p>
         </div>
-        <YouTubeDialog />
-        <Button variant="outline" onClick={() => void chooseFiles().catch(showError)}>
-          <Upload className="size-5" />
-          Files
-        </Button>
-        <Button variant="outline" onClick={() => void chooseFolder().catch(showError)}>
-          <FolderOpen className="size-5" />
-          Folder
-        </Button>
-        <Button variant="outline" onClick={() => void chooseExportDir().catch(showError)}>
-          {exportDir ? "Change folder" : "Save location"}
-        </Button>
-        <Button disabled={!selected.length} onClick={() => void exportSelection(selected).catch(showError)}>
-          Export
-        </Button>
+        <div className="flex rounded-md border border-[#3a3a3a] bg-[#1c1c1c] p-1">
+          <button type="button" className={`cursor-pointer rounded px-3 py-1.5 text-sm ${playMode === "one" ? "bg-white text-black" : "text-white"}`} onClick={() => setMode("one")}>One track</button>
+          <button type="button" className={`cursor-pointer rounded px-3 py-1.5 text-sm ${playMode === "sequence" ? "bg-white text-black" : "text-white"}`} onClick={() => setMode("sequence")}>In order</button>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline">Library</Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => setYoutubeOpen(true)}>
+              <Youtube className="size-4" />
+              YouTube
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void chooseFiles().catch(showError)}>
+              <Upload className="size-4" />
+              Files
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void chooseFolder().catch(showError)}>
+              <FolderOpen className="size-4" />
+              Folder
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void chooseExportDir().catch(showError)}>
+              {exportDir ? "Change folder" : "Save location"}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!selected.length} onSelect={() => void exportSelection(selected).catch(showError)}>
+              Export
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <YouTubeDialog open={youtubeOpen} onOpenChange={setYoutubeOpen} />
       </header>
       {exportDir ? (
-        <div className="flex flex-wrap items-center gap-2 px-6 pb-2 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-2 px-4 pb-2 text-sm text-muted-foreground sm:px-6">
           <span className="min-w-0 truncate">Saving to {exportDir}</span>
           <Button variant="ghost" size="sm" onClick={() => void api.revealPath(exportDir).catch(showError)}>Open folder</Button>
         </div>
@@ -174,7 +209,9 @@ export function LibraryView() {
         <TrackBrowse
           tracks={tracks}
           currentId={currentId}
-          onOpen={(visible, index) => void playTracks(visible, index)}
+          onOpen={playVisible}
+          selectedIds={selected}
+          onSelectVisible={(ids, on) => setSelected((current) => (on ? [...new Set([...current, ...ids])] : current.filter((id) => !ids.includes(id))))}
           actions={(track) => (
             <>
               <input
@@ -240,7 +277,7 @@ export function LibraryView() {
           <p className="text-sm text-muted-foreground">This level applies only to this track and multiplies the main volume.</p>
           <div className="mt-4 flex items-center gap-3">
             <Slider
-              max={100}
+              max={200}
               value={[Math.round((volumeTrack?.gain ?? 1) * 100)]}
               onValueChange={([value]) => {
                 if (!volumeTrack) return

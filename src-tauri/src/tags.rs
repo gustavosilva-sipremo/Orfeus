@@ -69,6 +69,7 @@ pub fn write_tags(
     artist: &str,
     album: &str,
     lyrics: &str,
+    synced_lyrics: &str,
     cover_path: Option<&Path>,
 ) -> Result<(), String> {
     let mut tagged = Probe::open(path)
@@ -86,8 +87,9 @@ pub fn write_tags(
     tag.set_artist(artist.to_string());
     tag.set_album(album.to_string());
     tag.remove_key(&ItemKey::Lyrics);
-    if !lyrics.trim().is_empty() {
-        tag.insert_text(ItemKey::Lyrics, lyrics.to_string());
+    let stored = stored_lyrics(lyrics, synced_lyrics);
+    if !stored.is_empty() {
+        tag.insert_text(ItemKey::Lyrics, stored);
     }
     if let Some(cover) = cover_path {
         let mut file = File::open(cover).map_err(|err| err.to_string())?;
@@ -109,6 +111,18 @@ pub fn write_tags(
         .save_to_path(path, WriteOptions::default())
         .map_err(|err| err.to_string())?;
     Ok(())
+}
+
+fn stored_lyrics(plain: &str, synced: &str) -> String {
+    let plain = plain.trim();
+    let synced = synced.trim();
+    if plain.is_empty() {
+        synced.to_string()
+    } else if synced.is_empty() || synced == plain {
+        plain.to_string()
+    } else {
+        format!("{plain}\n\n{synced}")
+    }
 }
 
 fn nonempty(value: Option<impl AsRef<str>>) -> Option<String> {

@@ -1,14 +1,21 @@
 import { create } from "zustand"
 import * as api from "@/lib/api"
-import { previewPlaylists, previewSearch, previewTracks } from "@/lib/preview"
-import type { LoopMode, Playlist, SearchReport, Track } from "@/lib/types"
+import { previewPlaylists, previewSearch, previewShelves, previewTracks } from "@/lib/preview"
+import type { LoopMode, Playlist, SearchReport, Shelf, Track } from "@/lib/types"
 import { message } from "@/lib/utils"
 import { usePlayer } from "@/stores/player"
 
-type View = { kind: "library" } | { kind: "playlist"; id: string }
+type View = { kind: "library"; id: string } | { kind: "playlist"; id: string }
+
+function libraryView(shelves: Shelf[], current?: View): View {
+  if (current?.kind === "playlist") return current
+  if (current?.kind === "library" && shelves.some((shelf) => shelf.id === current.id)) return current
+  return { kind: "library", id: shelves[0]?.id ?? "" }
+}
 
 type LibraryState = {
   tracks: Track[]
+  shelves: Shelf[]
   playlists: Playlist[]
   ready: boolean
   busy: string | null
@@ -29,6 +36,9 @@ type LibraryState = {
   updateTrack: (input: Parameters<typeof api.updateTrack>[0]) => Promise<void>
   deleteTrack: (id: string) => Promise<void>
   reorderTracks: (ids: string[]) => Promise<void>
+  createShelf: (name: string) => Promise<void>
+  setShelfKind: (id: string, kind: Shelf["kind"]) => Promise<void>
+  removeShelf: (id: string) => Promise<void>
   createPlaylist: (name: string) => Promise<void>
   savePlaylist: (input: Parameters<typeof api.savePlaylist>[0]) => Promise<void>
   deletePlaylist: (id: string) => Promise<void>
@@ -50,6 +60,7 @@ function replacePlaylist(playlists: Playlist[], playlist: Playlist) {
 
 export const useLibrary = create<LibraryState>((set, get) => ({
   tracks: [],
+  shelves: [],
   playlists: [],
   ready: false,
   busy: null,
@@ -58,12 +69,14 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   exportProgress: null,
   lastExportDir: null,
   editingId: null,
-  view: { kind: "library" },
+  view: { kind: "library", id: "preview-shelf" },
   init: async () => {
     if (!api.desktop()) {
       set({
         tracks: previewTracks,
+        shelves: previewShelves,
         playlists: previewPlaylists,
+        view: { kind: "library", id: previewShelves[0].id },
         ready: true,
         notice: "Interface preview. Audio and files open in the desktop app.",
       })
@@ -74,8 +87,8 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   refresh: async () => {
     if (!api.desktop()) return
     try {
-      const [tracks, playlists] = await Promise.all([api.listTracks(), api.listPlaylists()])
-      set({ tracks, playlists, ready: true, error: null })
+      const [tracks, playlists, shelves] = await Promise.all([api.listTracks(), api.listPlaylists(), api.listShelves()])
+      set({ tracks, playlists, shelves, view: libraryView(shelves, get().view), ready: true, error: null })
     } catch (error) {
       set({ ready: true, error: message(error) })
     }
@@ -92,7 +105,8 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     }
     set({ busy: "Importing…", error: null })
     try {
-      const report = await api.importPaths(paths, recursive, watch)
+      const shelfId = get().view.kind === "library" ? get().view.id : get().shelves[0]?.id
+      const report = await api.importPaths(paths, recursive, watch, shelfId)
       await get().refresh()
       set({
         notice:
@@ -163,6 +177,38 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       set({ tracks: current, error: message(error) })
     }
   },
+  createShelf: async (name) => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    if (!api.desktop()) {
+      const shelf: Shelf = { id: `preview-${Date.now()}`, name: trimmed, kind: "music" }
+      set({ shelves: [...get().shelves, shelf], view: { kind: "library", id: shelf.id } })
+      return
+    }
+    const shelf = await api.createShelf(trimmed, "music")
+    set({ shelves: [...get().shelves, shelf], view: { kind: "library", id: shelf.id }, error: null })
+  },
+  setShelfKind: async (id, kind) => {
+    if (!api.desktop()) {
+      set({ shelves: get().shelves.map((shelf) => (shelf.id === id ? { ...shelf, kind } : shelf)) })
+      return
+    }
+    const shelf = await api.updateShelf(id, kind)
+    set({ shelves: get().shelves.map((item) => (item.id === shelf.id ? shelf : item)) })
+  },
+  removeShelf: async (id) => {
+    if (get().shelves.length <= 1) {
+      set({ error: "Keep at least one library." })
+      return
+    }
+    if (!api.desktop()) {
+      const shelves = get().shelves.filter((shelf) => shelf.id !== id)
+      set({ shelves, view: libraryView(shelves, get().view) })
+      return
+    }
+    await api.deleteShelf(id)
+    await get().refresh()
+  },
   createPlaylist: async (name) => {
     if (!api.desktop()) {
       const playlist: Playlist = {
@@ -205,12 +251,12 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     if (!api.desktop()) {
       set({
         playlists: get().playlists.filter((playlist) => playlist.id !== id),
-        view: { kind: "library" },
+        view: libraryView(get().shelves),
       })
       return
     }
     await api.deletePlaylist(id)
-    set({ view: { kind: "library" } })
+    set({ view: libraryView(get().shelves) })
     await get().refresh()
   },
   addToPlaylist: async (playlistId, trackIds) => {

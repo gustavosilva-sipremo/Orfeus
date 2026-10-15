@@ -2,6 +2,7 @@ mod audio;
 mod db;
 mod export;
 mod library;
+mod media;
 mod models;
 mod package;
 mod search;
@@ -36,6 +37,7 @@ fn setup_app(app: &mut tauri::App) -> Result<(), String> {
         audio,
         data_dir,
     });
+    media::start(app.handle().clone());
     let handle = app.handle().clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(8));
@@ -65,6 +67,10 @@ pub fn run() {
             library::reorder_tracks,
             library::read_image,
             library::delete_track,
+            library::list_shelves,
+            library::create_shelf,
+            library::update_shelf,
+            library::delete_shelf,
             library::list_playlists,
             library::create_playlist,
             library::save_playlist,
@@ -81,6 +87,7 @@ pub fn run() {
             youtube::youtube_defaults,
             youtube::youtube_probe,
             youtube::youtube_download,
+            youtube::youtube_skip,
             youtube::youtube_reveal,
             audio::play,
             audio::pause,

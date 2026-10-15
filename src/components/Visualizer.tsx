@@ -77,8 +77,9 @@ export function StageCanvas({ bands }: { bands: number[] }) {
     context.fill()
     bands.forEach((band, index) => {
       const angle = (index / bands.length) * Math.PI * 2 - Math.PI / 2
-      const inner = reach * 0.72
-      const outer = inner + 18 + band * reach * 0.85
+      const lifted = Math.pow(Math.max(band, 0), 0.72)
+      const inner = reach * 0.84
+      const outer = inner + 10 + lifted * reach * 1.45
       const mirror = angle + Math.PI
       for (const theta of [angle, mirror]) {
         const gradient = context.createLinearGradient(cx + Math.cos(theta) * inner, cy + Math.sin(theta) * inner, cx + Math.cos(theta) * outer, cy + Math.sin(theta) * outer)
@@ -86,7 +87,7 @@ export function StageCanvas({ bands }: { bands: number[] }) {
         gradient.addColorStop(0.4, `rgba(255, 248, 236, ${0.55 + band * 0.45})`)
         gradient.addColorStop(1, "rgba(255,255,255,0.02)")
         context.strokeStyle = gradient
-        context.lineWidth = 3 + band * 8
+        context.lineWidth = 2.5 + lifted * 9
         context.lineCap = "round"
         context.beginPath()
         context.moveTo(cx + Math.cos(theta) * inner, cy + Math.sin(theta) * inner)

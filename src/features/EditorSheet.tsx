@@ -32,6 +32,7 @@ export function EditorSheet() {
   const [hits, setHits] = useState<SearchHit[]>([])
   const [lookups, setLookups] = useState<FieldLookup[]>([])
   const [searching, setSearching] = useState(false)
+  const [cooldown, setCooldown] = useState(0)
   const [localError, setLocalError] = useState<string | null>(null)
   const playingId = usePlayer((state) => state.trackId)
   const loadedId = useRef<string | null>(null)
@@ -58,6 +59,12 @@ export function EditorSheet() {
 
   const preview = clearCover ? null : coverSource ?? track?.coverPath ?? null
 
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const timer = window.setTimeout(() => setCooldown((current) => Math.max(0, current - 1)), 1000)
+    return () => window.clearTimeout(timer)
+  }, [cooldown])
+
   async function chooseCover() {
     if (!api.desktop()) {
       setLocalError("Cover art is chosen in the desktop app.")
@@ -73,6 +80,7 @@ export function EditorSheet() {
   }
 
   async function search() {
+    if (cooldown > 0) return
     setSearching(true)
     setLocalError(null)
     try {
@@ -84,6 +92,7 @@ export function EditorSheet() {
       setLocalError(message(error))
     } finally {
       setSearching(false)
+      setCooldown(2)
     }
   }
 
@@ -149,6 +158,7 @@ export function EditorSheet() {
                 <Button variant="ghost" size="sm" onClick={() => { setClearCover(true); setCoverSource(null) }}>Remove</Button>
               </div>
             </div>
+            <p className="text-sm text-muted-foreground">Recommended: a square image, 1400×1400 or larger.</p>
           </section>
           <section className="glass space-y-3 rounded-2xl p-4">
             <h3 className="text-sm tracking-[0.16em] text-gold uppercase">Details</h3>
@@ -165,14 +175,15 @@ export function EditorSheet() {
           ) : null}
           <section className="glass space-y-3 rounded-2xl p-4">
             <h3 className="text-sm tracking-[0.16em] text-gold uppercase">Track volume</h3>
-            <Label htmlFor="gain">{Math.round(gain * 100)}% of the main volume</Label>
-            <Slider id="gain" max={100} value={[Math.round(gain * 100)]} onValueChange={([value]) => setGain((value ?? 100) / 100)} aria-label="Track volume" />
+            <Label htmlFor="gain">{Math.round(gain * 100)}% of the main volume. Up to 200% plays louder than the main level.</Label>
+            <Slider id="gain" max={200} value={[Math.round(gain * 100)]} onValueChange={([value]) => setGain((value ?? 100) / 100)} aria-label="Track volume" />
           </section>
           <section className="glass space-y-3 rounded-2xl p-4">
             <h3 className="text-sm tracking-[0.16em] text-gold uppercase">Lyrics and sync</h3>
-            <Button variant="secondary" onClick={() => void search()} disabled={searching}>
-              {searching ? "Searching…" : "Search cover, lyrics, and sync"}
+            <Button variant="secondary" onClick={() => void search()} disabled={searching || cooldown > 0}>
+              {searching ? "Searching…" : cooldown > 0 ? `Wait ${cooldown}s` : "Search cover, lyrics, and sync"}
             </Button>
+            <p className="text-sm text-muted-foreground">MusicBrainz supplies the recording, Cover Art Archive or iTunes the image, and LRCLIB the lyrics. The wait avoids too many requests.</p>
             {localError ? <p className="text-base text-pigment">{localError}</p> : null}
             {lookups.length ? (
               <ul className="space-y-1">

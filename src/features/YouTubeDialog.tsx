@@ -1,21 +1,22 @@
 import { listen } from "@tauri-apps/api/event"
-import { open } from "@tauri-apps/plugin-dialog"
-import { FolderOpen, Youtube } from "lucide-react"
+import { open as chooseDirectory } from "@tauri-apps/plugin-dialog"
+import { FolderOpen } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import * as api from "@/lib/api"
 import { formatClock } from "@/lib/format"
-import type { YoutubeProbe, YoutubeProgress } from "@/lib/types"
+import type { YoutubeEntry, YoutubeProbe, YoutubeProgress } from "@/lib/types"
 import { cn, message } from "@/lib/utils"
 import { useLibrary } from "@/stores/library"
 
 const audioKey = "orfeus-youtube-audio-dir"
 const videoKey = "orfeus-youtube-video-dir"
 
-export function YouTubeDialog() {
-  const [openDialog, setOpenDialog] = useState(false)
+type QueueRow = YoutubeEntry & { included: boolean; status: string }
+
+export function YouTubeDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [url, setUrl] = useState("")
   const [keep, setKeep] = useState(false)
   const [resolution, setResolution] = useState<number | null>(null)
@@ -27,9 +28,16 @@ export function YouTubeDialog() {
   const progressRef = useRef<YoutubeProgress | null>(null)
   const [busy, setBusy] = useState<"lookup" | "download" | null>(null)
   const [error, setError] = useState("")
+  const [rows, setRows] = useState<QueueRow[]>([])
+  const includedRef = useRef<Set<number>>(new Set())
+  const activeRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (!openDialog || !api.desktop()) return
+    includedRef.current = new Set(rows.filter((row) => row.included).map((row) => row.index))
+  }, [rows])
+
+  useEffect(() => {
+    if (!open || !api.desktop()) return
     if (audioDir && videoDir) return
     let cancelled = false
     void api.youtubeDefaults().then((defaults) => {
@@ -40,14 +48,19 @@ export function YouTubeDialog() {
     return () => {
       cancelled = true
     }
-  }, [openDialog, audioDir, videoDir])
+  }, [open, audioDir, videoDir])
 
   useEffect(() => {
-    if (!openDialog || !api.desktop()) return
+    if (!open || !api.desktop()) return
     let unlisten: (() => void) | undefined
     let disposed = false
     void listen<YoutubeProgress>("youtube://progress", (event) => {
       const next = event.payload
+      const active = activeRef.current
+      if (active != null) {
+        const label = next.phase === "download" ? `Downloading ${Math.round(next.percent)}%` : next.label
+        setRows((current) => current.map((row) => (row.index === active ? { ...row, status: label } : row)))
+      }
       const previous = progressRef.current
       const phaseChanged = !previous || previous.phase !== next.phase || previous.label !== next.label
       const jumped = !previous || Math.abs(next.percent - previous.percent) >= 1
@@ -64,10 +77,10 @@ export function YouTubeDialog() {
       disposed = true
       unlisten?.()
     }
-  }, [openDialog])
+  }, [open])
 
   async function chooseDir(title: string, current: string, key: string, setDir: (path: string) => void) {
-    const picked = await open({ directory: true, title, defaultPath: current || undefined })
+    const picked = await chooseDirectory({ directory: true, title, defaultPath: current || undefined })
     if (typeof picked !== "string") return
     remember(key, picked, setDir)
   }
@@ -81,7 +94,8 @@ export function YouTubeDialog() {
       const next = await api.youtubeProbe(url)
       setDetails(next)
       setProbedUrl(url.trim())
-      setResolution(next.resolutions[0]?.height ?? null)
+      setResolution(next.kind === "playlist" ? 360 : next.resolutions[0]?.height ?? null)
+      setRows(next.kind === "playlist" ? next.entries.map((entry) => ({ ...entry, included: true, status: "Queued" })) : [])
     } catch (reason) {
       setError(message(reason))
     } finally {
@@ -89,35 +103,75 @@ export function YouTubeDialog() {
     }
   }
 
+  function markRow(index: number, status: string) {
+    setRows((current) => current.map((row) => (row.index === index ? { ...row, status } : row)))
+  }
+
+  async function saveOne(target: string, title: string) {
+    const saved = await api.youtubeDownload({
+      url: target,
+      audioDir,
+      videoDir,
+      keepVideo: keep,
+      resolution: keep ? resolution : null,
+    })
+    setProgress({ phase: "library", percent: 100, label: "Adding to the library" })
+    await api.importPaths([saved.audioPath], false, false)
+    return saved.title.trim() || title
+  }
+
   async function download() {
     if (keep && resolution == null) {
       setError("Choose a resolution for the video you want to keep.")
       return
     }
+    const playlist = details?.kind === "playlist" && rows.length > 0
+    if (playlist && !rows.some((row) => row.included)) {
+      setError("Choose at least one video.")
+      return
+    }
     setError("")
     setProgress({ phase: "prepare", percent: 0, label: "Preparing the downloader" })
     setBusy("download")
+    const savedNames: string[] = []
     try {
-      const saved = await api.youtubeDownload({
-        url,
-        audioDir,
-        videoDir,
-        keepVideo: keep,
-        resolution: keep ? resolution : null,
-      })
-      setProgress({ phase: "library", percent: 100, label: "Adding to the library" })
-      await api.importPaths([saved.audioPath], false, false)
-      await useLibrary.getState().refresh()
-      const name = saved.title.trim() || "The track"
-      useLibrary.setState({
-        notice: keep ? `${name} is in the library, and the video was kept.` : `${name} is in the library.`,
-      })
+      const queue = playlist ? rows : [{ index: 0, title: details?.title ?? "Track", author: "", url, length: 0, included: true, status: "Queued" }]
+      for (const row of queue) {
+        if (playlist && !includedRef.current.has(row.index)) {
+          markRow(row.index, "Skipped")
+          continue
+        }
+        activeRef.current = row.index
+        markRow(row.index, "Downloading")
+        try {
+          const name = await saveOne(row.url, row.title)
+          savedNames.push(name)
+          markRow(row.index, "Done")
+        } catch (reason) {
+          const text = message(reason)
+          if (text === "Skipped.") {
+            markRow(row.index, "Skipped")
+            continue
+          }
+          markRow(row.index, "Failed")
+          setError(text)
+        } finally {
+          activeRef.current = null
+        }
+      }
+      if (savedNames.length) {
+        await useLibrary.getState().refresh()
+        useLibrary.setState({
+          notice: savedNames.length === 1 ? `${savedNames[0]} is in the library.` : `${savedNames.length} tracks are in the library.`,
+        })
+      }
       progressRef.current = null
       setProgress(null)
-      setOpenDialog(false)
+      if (!playlist && savedNames.length) onOpenChange(false)
     } catch (reason) {
       setError(message(reason))
     } finally {
+      activeRef.current = null
       setBusy(null)
     }
   }
@@ -126,13 +180,11 @@ export function YouTubeDialog() {
   const sameVideo = details != null && probedUrl === url.trim()
   const percent = !progress ? 0 : progress.phase === "download" ? Math.max(0, Math.min(100, progress.percent)) : progress.phase === "prepare" ? 12 : 100
 
+  const playlist = sameVideo && details.kind === "playlist"
+
   return (
     <>
-      <Button variant="outline" onClick={() => setOpenDialog(true)}>
-        <Youtube className="size-5" />
-        YouTube
-      </Button>
-      <Dialog open={openDialog} onOpenChange={(next) => !running && setOpenDialog(next)}>
+      <Dialog open={open} onOpenChange={(next) => !running && onOpenChange(next)}>
         <DialogContent
           className="panel-solid w-[min(42rem,calc(100%-2rem))] outline-none focus:outline-none"
           onPointerDownOutside={(event) => running && event.preventDefault()}
@@ -152,7 +204,7 @@ export function YouTubeDialog() {
               <Input
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
-                placeholder="Paste a YouTube link"
+                placeholder="Paste a video or playlist link"
                 disabled={running}
                 aria-label="YouTube link"
                 className="border-[#3a3a3a] bg-[#1c1c1c] shadow-none ring-0 outline-none focus-visible:border-white focus-visible:ring-0"
@@ -165,8 +217,58 @@ export function YouTubeDialog() {
               <div>
                 <p className="truncate text-base">{details.title}</p>
                 <p className="text-sm text-muted-foreground">
-                  {[details.author, details.length > 0 ? formatClock(details.length) : ""].filter(Boolean).join(" · ")}
+                  {playlist
+                    ? `${rows.length} videos`
+                    : [details.author, details.length > 0 ? formatClock(details.length) : ""].filter(Boolean).join(" · ")}
                 </p>
+              </div>
+            ) : null}
+            {playlist ? (
+              <div className="overflow-hidden rounded-lg border border-[#3a3a3a]">
+                <div className="flex items-center justify-between border-b border-[#3a3a3a] px-3 py-2">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="size-4 cursor-pointer"
+                      checked={rows.every((row) => row.included)}
+                      disabled={running}
+                      onChange={(event) => setRows((current) => current.map((row) => ({ ...row, included: event.target.checked, status: event.target.checked && row.status === "Skipped" ? "Queued" : row.status })))}
+                    />
+                    All
+                  </label>
+                  <Button variant="ghost" size="sm" disabled={!running} onClick={() => void api.youtubeSkip()}>
+                    Skip current
+                  </Button>
+                </div>
+                <table className="w-full text-left text-sm">
+                  <thead className="text-xs tracking-[0.14em] text-muted-foreground uppercase">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Keep</th>
+                      <th className="px-3 py-2 font-medium">Title</th>
+                      <th className="px-3 py-2 font-medium">Time</th>
+                      <th className="px-3 py-2 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row) => (
+                      <tr key={row.url} className="border-t border-[#2a2a2a]">
+                        <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            className="size-4 cursor-pointer"
+                            checked={row.included}
+                            disabled={running && row.status !== "Queued"}
+                            aria-label={`Include ${row.title}`}
+                            onChange={(event) => setRows((current) => current.map((item) => (item.index === row.index ? { ...item, included: event.target.checked } : item)))}
+                          />
+                        </td>
+                        <td className="max-w-56 truncate px-3 py-2">{row.title}</td>
+                        <td className="px-3 py-2 tabular-nums text-muted-foreground">{row.length > 0 ? formatClock(row.length) : "—"}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{row.included ? row.status : "Skipped"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : null}
             <label className="flex cursor-pointer items-center gap-3 text-base">
@@ -182,7 +284,7 @@ export function YouTubeDialog() {
             {keep ? (
               sameVideo ? (
                 <div className="flex flex-wrap gap-2">
-                  {details.resolutions.map((item) => (
+                  {(playlist ? [{ height: 360, label: "360p" }, { height: 720, label: "720p" }, { height: 1080, label: "1080p" }] : details.resolutions).map((item) => (
                     <button
                       key={item.height}
                       type="button"
@@ -230,7 +332,7 @@ export function YouTubeDialog() {
             ) : null}
             {error ? <p className="text-sm text-pigment">{error}</p> : null}
             <Button
-              disabled={running || !url.trim() || !audioDir || (keep && (!sameVideo || resolution == null))}
+              disabled={running || !url.trim() || !audioDir || (keep && (!sameVideo || resolution == null)) || (playlist && !rows.some((row) => row.included))}
               onClick={() => void download()}
             >
               {busy === "download" ? "Working…" : "Download"}

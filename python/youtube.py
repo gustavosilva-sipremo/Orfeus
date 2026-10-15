@@ -101,8 +101,20 @@ def open_video(url, on_progress):
     return YouTube(url, on_progress_callback=on_progress)
 
 
+def playlist_url(url):
+    lowered = url.lower()
+    if "youtu.be/" in lowered:
+        return False
+    if "/playlist" in lowered:
+        return True
+    return "list=" in lowered and "watch?" not in lowered
+
+
 def probe(url):
     require_ffmpeg()
+    if playlist_url(url):
+        probe_playlist(url)
+        return
     video = open_video(url, lambda *_args: None)
     resolutions = resolution_list(video)
     if not resolutions:
@@ -110,10 +122,45 @@ def probe(url):
     emit(
         {
             "event": "probe",
+            "kind": "video",
             "title": video.title or "Untitled",
             "author": video.author or "",
             "length": int(video.length or 0),
             "resolutions": resolutions,
+            "entries": [],
+        }
+    )
+
+
+def probe_playlist(url):
+    from pytubefix import Playlist
+
+    playlist = Playlist(url)
+    entries = []
+    for index, video in enumerate(playlist.videos):
+        try:
+            entries.append(
+                {
+                    "index": index,
+                    "title": video.title or "Untitled",
+                    "author": video.author or "",
+                    "url": video.watch_url,
+                    "length": int(video.length or 0),
+                }
+            )
+        except Exception:
+            continue
+    if not entries:
+        fail("This playlist has no videos that can be downloaded.")
+    emit(
+        {
+            "event": "probe",
+            "kind": "playlist",
+            "title": playlist.title or "Playlist",
+            "author": "",
+            "length": 0,
+            "resolutions": [],
+            "entries": entries,
         }
     )
 

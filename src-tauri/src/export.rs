@@ -59,6 +59,7 @@ pub fn export_tracks(
             &track.artist,
             &track.album,
             &track.lyrics,
+            &track.synced_lyrics,
             cover.filter(|path| path.is_file()),
         ) {
             errors.push(format!(

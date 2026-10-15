@@ -23,15 +23,18 @@ CachyOS and Arch need the WebKit and GTK libraries Tauri uses, plus the usual bu
 sudo pacman -S --needed webkit2gtk-4.1 gtk3 pkg-config file openssl python ffmpeg
 ```
 
-Then build an AppImage:
+Then install a launcher with the app icon:
 
 ```bash
-npm install
-npm run tauri build -- --bundles appimage
+./scripts/cachyos.sh
 ```
 
-The AppImage is written under `src-tauri/target/release/bundle/appimage/`. The bare binary is `src-tauri/target/release/orfeus`.
+The script builds the release binary, copies it to `~/.local/bin/orfeus`, installs `src-tauri/app-icon.png` as the `orfeus` icon, and writes `~/.local/share/applications/orfeus.desktop`. After that, Orfeus shows up in the app menu and can be started with `orfeus`.
+
+An AppImage is also written under `src-tauri/target/release/bundle/appimage/`. The bare binary is `src-tauri/target/release/orfeus`. On CachyOS the installed binary is the one to use: it does not need FUSE.
 
 ## Background
 
 The default background is Peter Paul Rubens, *Orpheus and Eurydice*, 1636–1638.
+
+Orfeus is released under the MIT license. See `LICENSE`.

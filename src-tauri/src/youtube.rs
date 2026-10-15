@@ -3,6 +3,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -12,6 +13,7 @@ use crate::export;
 use crate::AppState;
 
 static DOWNLOAD_BUSY: AtomicBool = AtomicBool::new(false);
+static DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,13 +30,25 @@ pub struct YoutubeResolution {
     pub label: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YoutubeEntry {
+    pub index: u32,
+    pub title: String,
+    pub author: String,
+    pub url: String,
+    pub length: u64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct YoutubeProbe {
+    pub kind: String,
     pub title: String,
     pub author: String,
     pub length: u64,
     pub resolutions: Vec<YoutubeResolution>,
+    pub entries: Vec<YoutubeEntry>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -88,6 +102,10 @@ struct ScriptEvent {
     audio_path: String,
     #[serde(default)]
     video_path: Option<String>,
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    entries: Vec<YoutubeEntry>,
 }
 
 #[tauri::command]
@@ -136,6 +154,11 @@ pub async fn youtube_download(
 }
 
 #[tauri::command]
+pub fn youtube_skip() {
+    DOWNLOAD_CANCEL.store(true, Ordering::SeqCst);
+}
+
+#[tauri::command]
 pub fn youtube_reveal(path: String) -> Result<(), String> {
     let folder = PathBuf::from(path.trim());
     if folder.as_os_str().is_empty() {
@@ -157,12 +180,14 @@ fn probe_blocking(data_dir: &Path, url: &str) -> Result<YoutubeProbe, String> {
             let kind = event.event.clone();
             match kind.as_str() {
                 "probe" => {
-                    probe = Some(YoutubeProbe {
-                        title: event.title,
-                        author: event.author,
-                        length: event.length,
-                        resolutions: event.resolutions,
-                    });
+                probe = Some(YoutubeProbe {
+                    kind: if event.kind == "playlist" { "playlist".into() } else { "video".into() },
+                    title: event.title,
+                    author: event.author,
+                    length: event.length,
+                    resolutions: event.resolutions,
+                    entries: event.entries,
+                });
                 }
                 "error" => error = Some(event.message),
                 _ => {}
@@ -292,6 +317,9 @@ fn ensure_runtime(data_dir: &Path) -> Result<(PathBuf, PathBuf), String> {
 }
 
 fn run_script(python: &Path, script: &Path, args: &[String], on_event: &mut dyn FnMut(ScriptEvent)) -> Result<(), String> {
+    if DOWNLOAD_CANCEL.swap(false, Ordering::SeqCst) {
+        return Err("Skipped.".into());
+    }
     let mut child = Command::new(python)
         .arg(script)
         .args(args)
@@ -301,6 +329,18 @@ fn run_script(python: &Path, script: &Path, args: &[String], on_event: &mut dyn 
         .env("PYTHONWARNINGS", "ignore")
         .spawn()
         .map_err(|err| err.to_string())?;
+    let pid = child.id();
+    let stop_watch = std::sync::Arc::new(AtomicBool::new(false));
+    let watch_flag = stop_watch.clone();
+    let watcher = std::thread::spawn(move || {
+        while !watch_flag.load(Ordering::SeqCst) {
+            if DOWNLOAD_CANCEL.load(Ordering::SeqCst) {
+                stop_process(pid);
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(120));
+        }
+    });
     let stdout = child.stdout.take().ok_or("Could not read the downloader.")?;
     let mut stderr = child.stderr.take().ok_or("Could not read the downloader.")?;
     let stderr_task = std::thread::spawn(move || {
@@ -329,6 +369,12 @@ fn run_script(python: &Path, script: &Path, args: &[String], on_event: &mut dyn 
     }
     let stderr_text = stderr_task.join().unwrap_or_default();
     let status = child.wait().map_err(|err| err.to_string())?;
+    stop_watch.store(true, Ordering::SeqCst);
+    let _ = watcher.join();
+    let skipped = DOWNLOAD_CANCEL.swap(false, Ordering::SeqCst);
+    if skipped {
+        return Err("Skipped.".into());
+    }
     if !status.success() {
         return Err(script_error.unwrap_or_else(|| {
             let detail = tail_text(stderr_text.as_bytes());
@@ -340,6 +386,17 @@ fn run_script(python: &Path, script: &Path, args: &[String], on_event: &mut dyn 
         }));
     }
     Ok(())
+}
+
+fn stop_process(pid: u32) {
+    #[cfg(unix)]
+    {
+        let _ = Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+    }
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status();
+    }
 }
 
 fn first_watched(conn: &Connection) -> Result<Option<String>, String> {

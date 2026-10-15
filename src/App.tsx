@@ -25,6 +25,7 @@ export function App() {
   const dismiss = useLibrary((state) => state.dismiss)
   const playerError = usePlayer((state) => state.error)
   const [dropping, setDropping] = useState(false)
+  const [nav, setNav] = useState(false)
 
   useEffect(() => {
     void initLibrary()
@@ -127,9 +128,20 @@ export function App() {
           <div className="absolute inset-0 bg-linear-to-b from-black/30 via-black/45 to-black/75" />
         </div>
         <div className="flex min-h-0 flex-1">
-          <Sidebar />
-          <main className="min-w-0 flex-1">
-            {view.kind === "library" ? <LibraryView /> : <PlaylistView id={view.id} />}
+          {nav ? <button type="button" className="fixed inset-0 z-20 bg-black/55 md:hidden" aria-label="Close menu" onClick={() => setNav(false)} /> : null}
+          <div className={nav ? "fixed inset-y-0 left-0 z-30 flex md:static" : "hidden md:flex"}>
+            <Sidebar onNavigate={() => setNav(false)} />
+          </div>
+          <main className="flex min-w-0 flex-1 flex-col">
+            <div className="flex items-center gap-3 border-b border-white/10 px-3 py-2 md:hidden">
+              <button type="button" className="cursor-pointer rounded-md border border-[#3a3a3a] bg-[#1c1c1c] px-3 py-1.5 text-sm text-white" onClick={() => setNav(true)}>
+                Menu
+              </button>
+              <span className="serif text-xl italic">Orfeus</span>
+            </div>
+            <div className="min-h-0 flex-1">
+              {view.kind === "library" ? <LibraryView /> : <PlaylistView id={view.id} />}
+            </div>
           </main>
         </div>
         {exportProgress ? (

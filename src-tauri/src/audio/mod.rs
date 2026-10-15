@@ -175,6 +175,7 @@ impl AudioEngine {
     pub fn start(app: AppHandle) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let shared = Arc::new(Shared::new());
+        mark_music_stream();
         let rate = spawn_output(shared.clone());
         shared.device_rate.store(rate, Ordering::Relaxed);
         let decode_shared = shared.clone();
@@ -249,7 +250,7 @@ impl AudioEngine {
     pub fn set_track_gain(&self, gain: f32) {
         self.shared
             .track_gain_bits
-            .store(finite_unit(gain, 1.0).to_bits(), Ordering::Relaxed);
+            .store(finite_track_gain(gain).to_bits(), Ordering::Relaxed);
     }
 
     pub fn next(&self) -> Result<(), String> {
@@ -1114,6 +1115,14 @@ fn finite_unit(value: f32, fallback: f32) -> f32 {
     }
 }
 
+fn finite_track_gain(value: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(0.0, 2.0)
+    } else {
+        1.0
+    }
+}
+
 fn shape(sample: f32) -> f32 {
     if sample.is_finite() {
         sample.clamp(-1.0, 1.0)
@@ -1135,7 +1144,7 @@ fn spectrum_mut(shared: &Shared) -> MutexGuard<'_, VecDeque<f32>> {
 
 fn smooth_gain(shared: &Shared, frames: usize) -> f32 {
     let master = finite_unit(f32::from_bits(shared.volume_bits.load(Ordering::Relaxed)), 1.0);
-    let track = finite_unit(f32::from_bits(shared.track_gain_bits.load(Ordering::Relaxed)), 1.0);
+    let track = finite_track_gain(f32::from_bits(shared.track_gain_bits.load(Ordering::Relaxed)));
     let target = master * track;
     let current = f32::from_bits(shared.gain_bits.load(Ordering::Relaxed));
     let step = (frames as f32 * 0.000_35).clamp(0.02, 0.25);
@@ -1204,6 +1213,17 @@ fn to_i16(sample: f32) -> i16 {
 
 fn to_u16(sample: f32) -> u16 {
     ((sample.clamp(-1.0, 1.0) * 0.5 + 0.5) * u16::MAX as f32) as u16
+}
+
+fn mark_music_stream() {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::set_var("PULSE_PROP_media.role", "music");
+        std::env::set_var("PULSE_PROP_media.name", "Orfeus");
+        std::env::set_var("PULSE_PROP_application.name", "Orfeus");
+        std::env::set_var("PULSE_PROP_application.icon_name", "orfeus");
+        std::env::set_var("PULSE_PROP_application.process.binary", "orfeus");
+    }
 }
 
 fn spawn_output(shared: Arc<Shared>) -> u32 {
@@ -1341,7 +1361,7 @@ fn spectrum_loop(shared: Arc<Shared>, app: AppHandle) {
     let fft = planner.plan_fft_forward(2048);
     let mut smoothed = [0f32; 64];
     loop {
-        thread::sleep(Duration::from_millis(33));
+        thread::sleep(Duration::from_millis(24));
         let window = match shared.spectrum.try_lock() {
             Ok(guard) if guard.len() >= 2048 => {
                 let start = guard.len() - 2048;
@@ -1363,11 +1383,12 @@ fn spectrum_loop(shared: Arc<Shared>, app: AppHandle) {
         if playing && window.len() == 2048 {
             let bands = analyze(&fft, &window);
             for (slot, band) in smoothed.iter_mut().zip(bands) {
-                *slot = *slot * 0.55 + band * 0.45;
+                let follow = if band >= *slot { 0.82 } else { 0.46 };
+                *slot += (band - *slot) * follow;
             }
         } else {
             for slot in &mut smoothed {
-                *slot *= 0.82;
+                *slot *= 0.72;
             }
         }
         let _ = app.emit("playback://spectrum", smoothed.as_slice());
@@ -1410,7 +1431,9 @@ fn bands_from(mags: &[f32]) -> [f32; 64] {
             .max(start + 1)
             .min(bins);
         let avg = mags[start..end].iter().sum::<f32>() / (end - start) as f32;
-        *band = ((avg / peak) * energy.sqrt()).clamp(0.0, 1.0);
+        let loud = (avg / peak).powf(0.62);
+        let presence = energy.sqrt().max(0.42);
+        *band = (loud * presence).clamp(0.0, 1.0);
     }
     bands
 }

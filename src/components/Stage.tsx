@@ -1,7 +1,6 @@
 import { X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { Cover } from "@/components/Cover"
-import { Craquelure } from "@/components/Craquelure"
 import { quietBands, StageCanvas } from "@/components/Visualizer"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
@@ -14,20 +13,14 @@ import { usePlayer } from "@/stores/player"
 const offsetKey = (id: string) => `orfeus-lyric-offset:${id}`
 const layoutKey = "orfeus-stage-layout"
 
-type StageLayout = { cover: boolean; visualizer: boolean; lyrics: boolean }
+type StageLayout = { lyrics: boolean }
 
 function readLayout(): StageLayout {
   try {
     const raw = JSON.parse(localStorage.getItem(layoutKey) ?? "") as Partial<StageLayout>
-    const next = {
-      cover: raw.cover !== false,
-      visualizer: raw.visualizer !== false,
-      lyrics: raw.lyrics !== false,
-    }
-    if (!next.cover && !next.visualizer && !next.lyrics) return { cover: true, visualizer: true, lyrics: true }
-    return next
+    return { lyrics: raw.lyrics !== false }
   } catch {
-    return { cover: true, visualizer: true, lyrics: true }
+    return { lyrics: true }
   }
 }
 
@@ -36,32 +29,26 @@ export function Stage() {
   const close = usePlayer((state) => state.setStageOpen)
   const [layout, setLayout] = useState<StageLayout>(readLayout)
 
-  function toggle(key: keyof StageLayout) {
+  function toggleLyrics() {
     setLayout((current) => {
-      const next = { ...current, [key]: !current[key] }
-      if (!next.cover && !next.visualizer && !next.lyrics) return current
+      const next = { lyrics: !current.lyrics }
       localStorage.setItem(layoutKey, JSON.stringify(next))
       return next
     })
   }
 
-  const count = Number(layout.cover) + Number(layout.visualizer) + Number(layout.lyrics)
-
   return (
     <div className={open ? "visible fixed inset-0 z-40 opacity-100" : "pointer-events-none invisible fixed inset-0 z-40 opacity-0"} aria-hidden={!open}>
       <div className="flex h-full flex-col bg-black/25">
-        <div className="flex flex-wrap items-center justify-end gap-2 p-4">
-          <LayoutButton on={layout.cover} label="Cover" onClick={() => toggle("cover")} />
-          <LayoutButton on={layout.visualizer} label="Visualizer" onClick={() => toggle("visualizer")} />
-          <LayoutButton on={layout.lyrics} label="Lyrics" onClick={() => toggle("lyrics")} />
-          <Button variant="ghost" size="icon" className="glass" onClick={() => close(false)} aria-label="Close stage">
+        <div className="flex flex-wrap items-center justify-end gap-2 p-3 sm:p-4">
+          <LayoutButton on={layout.lyrics} label="Lyrics" onClick={toggleLyrics} />
+          <button type="button" className="flex size-11 cursor-pointer items-center justify-center rounded-md border border-[#3a3a3a] bg-[#1c1c1c] text-white" onClick={() => close(false)} aria-label="Close stage">
             <X className="size-6" />
-          </Button>
+          </button>
         </div>
-        <div className={`grid min-h-0 flex-1 gap-6 px-6 pb-28 ${count >= 3 ? "md:grid-cols-3" : count === 2 ? "md:grid-cols-2" : "grid-cols-1"}`}>
-          {layout.cover ? <CoverPanel solo={count === 1} /> : null}
-          {layout.visualizer ? <VisualizerPanel solo={count === 1} live={open} /> : null}
-          {layout.lyrics ? <LyricsPanel solo={count === 1} /> : null}
+        <div className={`grid min-h-0 flex-1 gap-4 overflow-auto px-4 pb-24 sm:gap-6 sm:px-6 sm:pb-28 ${layout.lyrics ? "lg:grid-cols-2" : "grid-cols-1"}`}>
+          <ArtworkPanel live={open} />
+          {layout.lyrics ? <LyricsPanel solo={false} /> : null}
         </div>
       </div>
     </div>
@@ -70,45 +57,37 @@ export function Stage() {
 
 function LayoutButton({ on, label, onClick }: { on: boolean; label: string; onClick: () => void }) {
   return (
-    <Button variant={on ? "default" : "outline"} size="sm" onClick={onClick} aria-pressed={on}>
+    <button
+      type="button"
+      className={`h-10 cursor-pointer rounded-md border px-3 text-sm ${on ? "border-white bg-white text-black" : "border-[#3a3a3a] bg-[#1c1c1c] text-white"}`}
+      onClick={onClick}
+      aria-pressed={on}
+    >
       {label}
-    </Button>
+    </button>
   )
 }
 
-function CoverPanel({ solo }: { solo: boolean }) {
+function ArtworkPanel({ live }: { live: boolean }) {
   const coverPath = usePlayer((state) => state.coverPath)
   const title = usePlayer((state) => state.title)
   const artist = usePlayer((state) => state.artist)
+  const bands = usePlayer((state) => (live ? state.bands : quietBands))
+  const shown = bands.length ? bands : quietBands
+  const energy = shown.reduce((sum, band) => sum + band, 0) / shown.length
   return (
-    <div className="flex min-h-0 flex-col items-center justify-center">
-      <Cover path={coverPath} className={`${solo ? "size-[min(68vh,34rem)]" : "size-[min(42vh,22rem)]"} rounded-3xl shadow-2xl ring-1 ring-white/40`} />
-      {solo ? (
-        <div className="mt-6 text-center">
-          <h2 className="serif text-5xl">{title || "The stage is quiet"}</h2>
-          <p className="mt-2 text-lg text-white/75">{artistLabel(artist)}</p>
+    <div className="flex min-h-0 flex-col items-center justify-center py-2">
+      <div className="relative size-[min(78vw,48vh,34rem)] sm:size-[min(68vh,36rem)]">
+        <StageCanvas bands={shown} />
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="size-[46%]" style={{ transform: `scale(${(1 + energy * 0.08).toFixed(3)})` }}>
+            <Cover path={coverPath} className="size-full rounded-full shadow-2xl ring-2 ring-white" />
+          </div>
         </div>
-      ) : null}
-    </div>
-  )
-}
-
-function VisualizerPanel({ solo, live }: { solo: boolean; live: boolean }) {
-  if (!live) return <VisualizerFrame solo={solo} bands={quietBands} />
-  return <LiveVisualizer solo={solo} />
-}
-
-function LiveVisualizer({ solo }: { solo: boolean }) {
-  const bands = usePlayer((state) => state.bands)
-  return <VisualizerFrame solo={solo} bands={bands} />
-}
-
-function VisualizerFrame({ solo, bands }: { solo: boolean; bands: number[] }) {
-  return (
-    <div className={`relative min-h-64 overflow-hidden rounded-3xl ring-1 ring-white/25 ${solo ? "h-full" : "h-full min-h-88"}`}>
-      <StageCanvas bands={bands} />
-      <div className="pointer-events-none absolute inset-0 opacity-25">
-        <Craquelure bands={bands} />
+      </div>
+      <div className="mt-8 w-full max-w-3xl px-2 text-center sm:mt-10">
+        <h2 className="serif text-3xl leading-tight tracking-tight sm:text-5xl sm:leading-[1.08]">{title || "The stage is quiet"}</h2>
+        <p className="mt-3 text-base text-white/75 sm:mt-4 sm:text-xl">{artistLabel(artist)}</p>
       </div>
     </div>
   )
@@ -121,8 +100,8 @@ function LyricsPanel({ solo }: { solo: boolean }) {
   return (
     <div className={`glass-strong flex min-h-0 flex-col overflow-hidden rounded-3xl p-6 md:p-8 ${solo ? "mx-auto h-full w-full max-w-3xl" : "h-full"}`}>
       <p className="text-xs tracking-[0.28em] text-gold uppercase">Orfeus</p>
-      <h2 className="serif mt-2 text-4xl md:text-5xl">{title || "The stage is quiet"}</h2>
-      <p className="mt-2 text-lg text-muted-foreground">{trackId ? artistLabel(artist) : "Pick a track to open the stage."}</p>
+      <h2 className="serif mt-4 text-3xl leading-tight sm:text-5xl">{title || "The stage is quiet"}</h2>
+      <p className="mt-3 text-base text-muted-foreground sm:text-lg">{trackId ? artistLabel(artist) : "Pick a track to open the stage."}</p>
       {trackId ? <LyricStage trackId={trackId} /> : null}
     </div>
   )
@@ -221,9 +200,9 @@ function LyricStage({ trackId }: { trackId: string }) {
   return (
     <div className="mt-4 flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant={synced ? "secondary" : "outline"} size="sm" onClick={() => setSynced(false)}>Reading</Button>
-        <Button variant={synced ? "default" : "outline"} size="sm" onClick={() => setSynced(true)}>Synced</Button>
-        <Button variant="ghost" size="sm" onClick={() => void fetchSynced()}>Find synced lyrics</Button>
+        <Button variant={synced ? "secondary" : "outline"} size="sm" className="bg-[#1c1c1c] text-white hover:bg-[#2a2a2a]" onClick={() => setSynced(false)}>Reading</Button>
+        <Button variant={synced ? "default" : "outline"} size="sm" className={synced ? undefined : "bg-[#1c1c1c] text-white hover:bg-[#2a2a2a]"} onClick={() => setSynced(true)}>Synced</Button>
+        <Button size="sm" className="bg-[#1c1c1c] text-white hover:bg-[#2a2a2a]" onClick={() => void fetchSynced()}>Find synced lyrics</Button>
       </div>
       {synced ? (
         <div className="mt-4 space-y-2">
@@ -237,7 +216,7 @@ function LyricStage({ trackId }: { trackId: string }) {
           </label>
           <p className="text-sm text-muted-foreground">Click the line being sung to stamp the current time. The active line stays highlighted.</p>
           {draft.includes("[") ? (
-            <Button variant="outline" size="sm" onClick={() => void bakeOffset()}>Bake offset into timestamps</Button>
+            <Button size="sm" className="bg-[#1c1c1c] text-white hover:bg-[#2a2a2a]" onClick={() => void bakeOffset()}>Bake offset into timestamps</Button>
           ) : null}
         </div>
       ) : null}

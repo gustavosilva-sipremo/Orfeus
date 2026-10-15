@@ -10,6 +10,7 @@ use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::library;
 use crate::models::{PackageManifest, PackagePlaylist, PackageTrack};
+use crate::tags;
 use crate::util::{self, now_secs};
 use crate::AppState;
 
@@ -55,6 +56,8 @@ pub fn export_package(
         Some(name)
     });
 
+    let scratch = std::env::temp_dir().join(format!("orfeus-pack-{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&scratch).map_err(|err| err.to_string())?;
     let mut manifest_tracks = Vec::new();
     for (index, track) in tracks.iter().enumerate() {
         let ext = Path::new(&track.path)
@@ -62,7 +65,19 @@ pub fn export_package(
             .and_then(|ext| ext.to_str())
             .unwrap_or("audio");
         let file_name = format!("tracks/{:02}.{}", index + 1, ext);
-        copy_into_zip(&mut zip, Path::new(&track.path), &file_name, stored)?;
+        let stamped = scratch.join(format!("{index}.{ext}"));
+        fs::copy(&track.path, &stamped).map_err(|err| err.to_string())?;
+        let cover_file = track.cover_path.as_deref().map(Path::new).filter(|path| path.is_file());
+        tags::write_tags(
+            &stamped,
+            &track.title,
+            &track.artist,
+            &track.album,
+            &track.lyrics,
+            &track.synced_lyrics,
+            cover_file,
+        )?;
+        copy_into_zip(&mut zip, &stamped, &file_name, stored)?;
         let cover = if let Some(path) = track.cover_path.as_deref() {
             let ext = Path::new(path)
                 .extension()
@@ -83,6 +98,7 @@ pub fn export_package(
             artist: track.artist.clone(),
             album: track.album.clone(),
             lyrics: track.lyrics.clone(),
+            synced_lyrics: track.synced_lyrics.clone(),
             cover,
         });
     }
@@ -102,6 +118,7 @@ pub fn export_package(
         .map_err(|err| err.to_string())?;
     zip.write_all(&json).map_err(|err| err.to_string())?;
     zip.finish().map_err(|err| err.to_string())?;
+    let _ = fs::remove_dir_all(&scratch);
     Ok(())
 }
 
@@ -165,6 +182,7 @@ pub fn import_package(state: State<AppState>, path: String) -> Result<String, St
                 artist: &track.artist,
                 album: &track.album,
                 lyrics: &track.lyrics,
+                synced_lyrics: &track.synced_lyrics,
             },
             cover,
         )?;
@@ -331,6 +349,7 @@ mod tests {
                 artist: "Orfeus".into(),
                 album: "Rachadura".into(),
                 lyrics: "Desci cantando.".into(),
+                synced_lyrics: String::new(),
                 cover: Some("covers/01.jpg".into()),
             }],
         };

@@ -15,6 +15,7 @@ export const previewTracks: Track[] = [
     gain: 1,
     missing: false,
     addedAt: 1,
+    shelfId: "preview-shelf",
   },
   {
     id: "preview-2",
@@ -30,6 +31,7 @@ export const previewTracks: Track[] = [
     gain: 0.65,
     missing: false,
     addedAt: 2,
+    shelfId: "preview-shelf",
   },
   {
     id: "preview-3",
@@ -45,8 +47,11 @@ export const previewTracks: Track[] = [
     gain: 1,
     missing: true,
     addedAt: 3,
+    shelfId: "preview-shelf",
   },
 ]
+
+export const previewShelves = [{ id: "preview-shelf", name: "Library", kind: "music" as const }]
 
 export const previewPlaylists: Playlist[] = [
   {

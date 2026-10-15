@@ -57,6 +57,7 @@ fn migrate(conn: &Connection) -> Result<(), String> {
     ensure_column(conn, "tracks", "synced_lyrics", "TEXT NOT NULL DEFAULT ''")?;
     ensure_column(conn, "tracks", "gain", "REAL NOT NULL DEFAULT 1")?;
     ensure_column(conn, "tracks", "sort_index", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_column(conn, "tracks", "shelf_id", "TEXT NOT NULL DEFAULT ''")?;
     backfill_sort_index(conn)?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS watched_folders (
@@ -67,7 +68,8 @@ fn migrate(conn: &Connection) -> Result<(), String> {
             path TEXT PRIMARY KEY
         );",
     )
-    .map_err(|err| err.to_string())
+    .map_err(|err| err.to_string())?;
+    ensure_shelves(conn)
 }
 
 fn backfill_sort_index(conn: &Connection) -> Result<(), String> {
@@ -92,6 +94,33 @@ fn backfill_sort_index(conn: &Connection) -> Result<(), String> {
         WHERE tracks.id = ranked.id;",
     )
     .map_err(|err| err.to_string())
+}
+
+fn ensure_shelves(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS shelves (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            kind TEXT NOT NULL DEFAULT 'music',
+            created_at INTEGER NOT NULL
+        );",
+    )
+    .map_err(|err| err.to_string())?;
+    ensure_column(conn, "watched_folders", "shelf_id", "TEXT NOT NULL DEFAULT ''")?;
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM shelves", [], |row| row.get(0))
+        .map_err(|err| err.to_string())?;
+    if count == 0 {
+        let id = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO shelves (id, name, kind, created_at) VALUES (?1, 'Library', 'music', ?2)",
+            rusqlite::params![id, crate::util::now_secs()],
+        )
+        .map_err(|err| err.to_string())?;
+        conn.execute("UPDATE tracks SET shelf_id = ?1 WHERE shelf_id = ''", [id])
+            .map_err(|err| err.to_string())?;
+    }
+    Ok(())
 }
 
 fn ensure_column(conn: &Connection, table: &str, column: &str, decl: &str) -> Result<(), String> {

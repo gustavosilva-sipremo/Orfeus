@@ -16,6 +16,7 @@ pub struct TrackDto {
     pub gain: f32,
     pub missing: bool,
     pub added_at: i64,
+    pub shelf_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -147,6 +148,15 @@ pub struct ExportProgress {
 pub struct WatchedFolder {
     pub path: String,
     pub recursive: bool,
+    pub shelf_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShelfDto {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -174,6 +184,8 @@ pub struct PackageTrack {
     pub artist: String,
     pub album: String,
     pub lyrics: String,
+    #[serde(default)]
+    pub synced_lyrics: String,
     pub cover: Option<String>,
 }
 

@@ -29,12 +29,12 @@ export function PlayerBar() {
   const disabled = !trackId
 
   return (
-    <footer className="glass relative z-40 border-t px-4 py-3">
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(18rem,1.5fr)_auto] items-center gap-4">
+    <footer className="glass relative z-40 border-t px-3 py-2 sm:px-4 sm:py-3">
+      <div className="flex flex-col gap-2 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(16rem,1.5fr)_auto] lg:items-center lg:gap-4">
         <button type="button" className="flex min-w-0 cursor-pointer items-center gap-3 text-left disabled:cursor-not-allowed" onClick={() => setStageOpen(true)} disabled={disabled}>
-          <Cover path={coverPath} className="size-14 shrink-0 rounded-md" />
+          <Cover path={coverPath} className="size-12 shrink-0 rounded-md sm:size-14" />
           <span className="min-w-0">
-            <span className="serif block truncate text-lg">{title || "Nothing playing"}</span>
+            <span className="serif block truncate text-base sm:text-lg">{title || "Nothing playing"}</span>
             <span className="block truncate text-sm text-muted-foreground">{trackId ? artistLabel(artist) : "Pick a track"}</span>
           </span>
         </button>
@@ -66,7 +66,7 @@ export function PlayerBar() {
             <span className="w-12 text-right tabular-nums">{formatClock(duration)}</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <VolumeControl />
           <Tooltip>
             <TooltipTrigger asChild>
@@ -100,7 +100,7 @@ function VolumeControl() {
   const [remembered, setRemembered] = useState(volume || 0.8)
   const Icon = volume <= 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2
   return (
-    <div className="flex w-40 items-center gap-1">
+    <div className="flex w-28 items-center gap-1 sm:w-40">
       <Button
         variant="ghost"
         size="icon"

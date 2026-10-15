@@ -74,7 +74,7 @@ export function PlaylistView({ id }: { id: string }) {
 
   return (
     <section className="flex h-full min-h-0 flex-col">
-      <header className="flex flex-wrap items-end gap-4 px-6 py-5">
+      <header className="flex flex-wrap items-end gap-3 px-4 py-4 sm:gap-4 sm:px-6 sm:py-5">
         <button type="button" onClick={() => void changeCover().catch(showError)} className="shrink-0">
           <Cover path={playlist.coverPath} className="size-28 rounded-xl" />
         </button>

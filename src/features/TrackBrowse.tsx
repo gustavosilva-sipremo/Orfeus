@@ -34,6 +34,8 @@ export function TrackBrowse({
   reorder,
   empty,
   manualSort = false,
+  selectedIds,
+  onSelectVisible,
 }: {
   tracks: Track[]
   currentId: string | null
@@ -42,6 +44,8 @@ export function TrackBrowse({
   reorder?: (track: Track) => ReactNode
   empty?: ReactNode
   manualSort?: boolean
+  selectedIds?: string[]
+  onSelectVisible?: (ids: string[], selected: boolean) => void
 }) {
   const chrome = readChrome()
   const [mode, setMode] = useState<Mode>(chrome.mode)
@@ -111,6 +115,18 @@ export function TrackBrowse({
         <Button variant={mode === "table" ? "secondary" : "outline"} size="icon" aria-label="Table" onClick={() => setMode("table")}>
           <Table2 className="size-5" />
         </Button>
+        {onSelectVisible ? (
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-5 cursor-pointer"
+              checked={visible.length > 0 && visible.every((track) => selectedIds?.includes(track.id))}
+              onChange={(event) => onSelectVisible(visible.map((track) => track.id), event.target.checked)}
+              aria-label="Select all tracks"
+            />
+            All
+          </label>
+        ) : null}
       </div>
       {visible.length === 0 ? (
         <div className="flex flex-1 items-center justify-center px-6 text-center">{empty ?? <p className="text-base text-muted-foreground">No tracks match this filter.</p>}</div>
@@ -181,7 +197,7 @@ export function TrackBrowse({
                 <span className="min-w-0">
                   <span className={`block truncate ${size > 60 ? "text-lg" : "text-base"}`}>{track.title}</span>
                   {currentId === track.id ? <span className="text-xs tracking-[0.18em] text-white uppercase">Playing</span> : null}
-                  {track.gain < 0.98 ? <span className="ml-2 text-xs text-muted-foreground">{Math.round(track.gain * 100)}%</span> : null}
+                  {Math.abs(track.gain - 1) > 0.02 ? <span className="ml-2 text-xs text-muted-foreground">{Math.round(track.gain * 100)}%</span> : null}
                   <span className="block truncate text-sm text-muted-foreground">
                     {artistLabel(track.artist)}
                     {track.album ? ` · ${track.album}` : ""}

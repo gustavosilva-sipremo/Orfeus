@@ -137,7 +137,7 @@ fn build_lookups(
                 http_status_label(err)
             ),
             None => format!(
-                "{} catalog {}.",
+                "{} {} from MusicBrainz.",
                 hits.len(),
                 if hits.len() == 1 { "match" } else { "matches" }
             ),
@@ -170,9 +170,9 @@ fn build_lookups(
             "lyrics",
             "found",
             if timed {
-                "Timed lyrics are available."
+                "Timed lyrics from LRCLIB."
             } else {
-                "Lyrics are available, without timestamps."
+                "Lyrics from LRCLIB, without timestamps."
             },
         )
     } else if let Some(err) = lrc_err {
@@ -194,7 +194,7 @@ fn build_lookups(
 
     let has_cover = hits.iter().any(|hit| hit.cover_url.is_some());
     let cover = if has_cover {
-        lookup("cover", "found", "Cover art was saved from the catalog.")
+        lookup("cover", "found", "Cover from Cover Art Archive, or iTunes when that archive has none.")
     } else if !has_meta && (mb_err.is_some() || lrc_err.is_some()) {
         lookup(
             "cover",

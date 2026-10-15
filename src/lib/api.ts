@@ -11,6 +11,7 @@ import type {
   Playlist,
   QueueTrack,
   SearchReport,
+  Shelf,
   Track,
 } from "@/lib/types"
 
@@ -30,8 +31,24 @@ export function listPlaylists() {
   return call<Playlist[]>("list_playlists")
 }
 
-export function importPaths(paths: string[], recursive = true, watch = false) {
-  return call<ImportReport>("import_paths", { paths, recursive, watch })
+export function importPaths(paths: string[], recursive = true, watch = false, shelfId?: string) {
+  return call<ImportReport>("import_paths", { paths, recursive, watch, shelfId })
+}
+
+export function listShelves() {
+  return call<Shelf[]>("list_shelves")
+}
+
+export function createShelf(name: string, kind: Shelf["kind"]) {
+  return call<Shelf>("create_shelf", { name, kind })
+}
+
+export function updateShelf(id: string, kind: Shelf["kind"]) {
+  return call<Shelf>("update_shelf", { id, kind })
+}
+
+export function deleteShelf(id: string) {
+  return call<void>("delete_shelf", { id })
 }
 
 export function listWatched() {
@@ -129,6 +146,10 @@ export function youtubeDefaults() {
 
 export function youtubeProbe(url: string) {
   return call<YoutubeProbe>("youtube_probe", { url })
+}
+
+export function youtubeSkip() {
+  return call<void>("youtube_skip")
 }
 
 export function youtubeDownload(request: {

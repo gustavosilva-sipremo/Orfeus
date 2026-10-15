@@ -14,6 +14,15 @@ export type Track = {
   gain: number
   missing: boolean
   addedAt: number
+  shelfId: string
+}
+
+export type ShelfKind = "music" | "podcast"
+
+export type Shelf = {
+  id: string
+  name: string
+  kind: ShelfKind
 }
 
 export type Playlist = {
@@ -74,12 +83,13 @@ export type QueueTrack = {
 export type ImportReport = { imported: number; skipped: number }
 export type YoutubeDefaults = { audioDir: string; videoDir: string }
 export type YoutubeResolution = { height: number; progressive: boolean; label: string }
-export type YoutubeProbe = { title: string; author: string; length: number; resolutions: YoutubeResolution[] }
+export type YoutubeEntry = { index: number; title: string; author: string; url: string; length: number }
+export type YoutubeProbe = { kind: "video" | "playlist"; title: string; author: string; length: number; resolutions: YoutubeResolution[]; entries: YoutubeEntry[] }
 export type YoutubeProgress = { phase: string; percent: number; label: string }
 export type YoutubeDone = { audioPath: string; videoPath: string | null; title: string; author: string }
 export type ExportReport = { exported: number; errors: string[]; destDir: string }
 export type ExportProgress = { done: number; total: number; current: string }
-export type WatchedFolder = { path: string; recursive: boolean }
+export type WatchedFolder = { path: string; recursive: boolean; shelfId: string }
 export type ImportProgress = { done: number; total: number; current: string }
 
 export function toQueue(track: Track): QueueTrack {

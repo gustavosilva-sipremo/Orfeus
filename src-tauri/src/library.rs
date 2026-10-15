@@ -9,7 +9,7 @@ use tauri::{AppHandle, Emitter, State};
 use walkdir::WalkDir;
 
 use crate::models::{
-    ImportProgress, ImportReport, PlaylistDto, SavePlaylist, TrackDto, UpdateTrack, WatchedFolder,
+    ImportProgress, ImportReport, PlaylistDto, SavePlaylist, ShelfDto, TrackDto, UpdateTrack, WatchedFolder,
 };
 use crate::tags;
 use crate::util::{self, now_secs};
@@ -48,8 +48,16 @@ pub fn import_paths(
     paths: Vec<String>,
     recursive: Option<bool>,
     watch: Option<bool>,
+    shelf_id: Option<String>,
 ) -> Result<ImportReport, String> {
-    import_all(&app, &state, &paths, recursive.unwrap_or(true), watch.unwrap_or(false))
+    import_all(
+        &app,
+        &state,
+        &paths,
+        recursive.unwrap_or(true),
+        watch.unwrap_or(false),
+        shelf_id.as_deref(),
+    )
 }
 
 #[tauri::command]
@@ -66,7 +74,79 @@ pub fn import_folder(
         &[path],
         recursive.unwrap_or(true),
         watch.unwrap_or(false),
+        None,
     )
+}
+
+#[tauri::command]
+pub fn list_shelves(state: State<AppState>) -> Result<Vec<ShelfDto>, String> {
+    let conn = state.db.lock().map_err(|err| err.to_string())?;
+    query_shelves(&conn)
+}
+
+#[tauri::command]
+pub fn create_shelf(state: State<AppState>, name: String, kind: String) -> Result<ShelfDto, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Name the library.".into());
+    }
+    let kind = shelf_kind(&kind);
+    let conn = state.db.lock().map_err(|err| err.to_string())?;
+    let id = uuid::Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT INTO shelves (id, name, kind, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![id, name, kind, now_secs()],
+    )
+    .map_err(|err| err.to_string())?;
+    Ok(ShelfDto {
+        id,
+        name: name.to_string(),
+        kind: kind.to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn update_shelf(state: State<AppState>, id: String, kind: String) -> Result<ShelfDto, String> {
+    let kind = shelf_kind(&kind);
+    let conn = state.db.lock().map_err(|err| err.to_string())?;
+    let changed = conn
+        .execute("UPDATE shelves SET kind = ?1 WHERE id = ?2", params![kind, &id])
+        .map_err(|err| err.to_string())?;
+    if changed == 0 {
+        return Err("That library is no longer here.".into());
+    }
+    query_shelves(&conn)?
+        .into_iter()
+        .find(|shelf| shelf.id == id)
+        .ok_or_else(|| "That library is no longer here.".into())
+}
+
+#[tauri::command]
+pub fn delete_shelf(state: State<AppState>, id: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|err| err.to_string())?;
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM shelves", [], |row| row.get(0))
+        .map_err(|err| err.to_string())?;
+    if count <= 1 {
+        return Err("Keep at least one library.".into());
+    }
+    let fallback: String = conn
+        .query_row(
+            "SELECT id FROM shelves WHERE id != ?1 ORDER BY created_at LIMIT 1",
+            [&id],
+            |row| row.get(0),
+        )
+        .map_err(|err| err.to_string())?;
+    conn.execute("UPDATE tracks SET shelf_id = ?1 WHERE shelf_id = ?2", params![fallback, id])
+        .map_err(|err| err.to_string())?;
+    conn.execute(
+        "UPDATE watched_folders SET shelf_id = ?1 WHERE shelf_id = ?2",
+        params![fallback, id],
+    )
+    .map_err(|err| err.to_string())?;
+    conn.execute("DELETE FROM shelves WHERE id = ?1", [&id])
+        .map_err(|err| err.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -353,7 +433,7 @@ pub fn move_playlist_track(
 pub fn query_tracks(conn: &Connection) -> Result<Vec<TrackDto>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, path, storage, title, artist, album, duration_ms, cover_path, lyrics, synced_lyrics, gain, missing, added_at
+            "SELECT id, path, storage, title, artist, album, duration_ms, cover_path, lyrics, synced_lyrics, gain, missing, added_at, shelf_id
              FROM tracks ORDER BY sort_index ASC, added_at DESC, title COLLATE NOCASE",
         )
         .map_err(|err| err.to_string())?;
@@ -366,7 +446,7 @@ pub fn query_tracks(conn: &Connection) -> Result<Vec<TrackDto>, String> {
 
 pub fn query_track(conn: &Connection, id: &str) -> Result<Option<TrackDto>, String> {
     conn.query_row(
-        "SELECT id, path, storage, title, artist, album, duration_ms, cover_path, lyrics, synced_lyrics, gain, missing, added_at
+        "SELECT id, path, storage, title, artist, album, duration_ms, cover_path, lyrics, synced_lyrics, gain, missing, added_at, shelf_id
          FROM tracks WHERE id = ?1",
         [id],
         map_track,
@@ -572,6 +652,7 @@ pub struct OwnedMeta<'a> {
     pub artist: &'a str,
     pub album: &'a str,
     pub lyrics: &'a str,
+    pub synced_lyrics: &'a str,
 }
 
 pub fn insert_owned_track(
@@ -615,9 +696,10 @@ pub fn insert_owned_track(
         cover_path = Some(dest.to_string_lossy().to_string());
     }
     let sort_index = next_sort_index(conn)?;
+    let shelf = resolve_shelf(conn, None).unwrap_or_default();
     conn.execute(
-        "INSERT INTO tracks (id, path, storage, content_hash, title, artist, album, duration_ms, cover_path, lyrics, missing, added_at, sort_index)
-         VALUES (?1, ?2, 'owned', ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11)",
+        "INSERT INTO tracks (id, path, storage, content_hash, title, artist, album, duration_ms, cover_path, lyrics, synced_lyrics, missing, added_at, sort_index, shelf_id)
+         VALUES (?1, ?2, 'owned', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, ?11, ?12, ?13)",
         params![
             id,
             path.to_string_lossy().to_string(),
@@ -628,8 +710,10 @@ pub fn insert_owned_track(
             tags.duration_ms,
             cover_path,
             meta.lyrics,
+            meta.synced_lyrics,
             now_secs(),
             sort_index,
+            shelf,
         ],
     )
     .map_err(|err| err.to_string())?;
@@ -642,10 +726,12 @@ fn import_all(
     paths: &[String],
     recursive: bool,
     watch: bool,
+    shelf_id: Option<&str>,
 ) -> Result<ImportReport, String> {
     let files = collect_audio(paths, recursive);
     let total = files.len();
     let conn = state.db.lock().map_err(|err| err.to_string())?;
+    let shelf = resolve_shelf(&conn, shelf_id)?;
     let mut imported = 0;
     let mut skipped = 0;
     for (index, path) in files.iter().enumerate() {
@@ -661,7 +747,7 @@ fn import_all(
                     .to_string(),
             },
         );
-        if import_one(&conn, &state.data_dir, path, true)? {
+        if import_one(&conn, &state.data_dir, path, true, &shelf)? {
             imported += 1;
         } else {
             skipped += 1;
@@ -676,7 +762,7 @@ fn import_all(
         },
     );
     if watch {
-        remember_watched(&conn, paths, recursive)?;
+        remember_watched(&conn, paths, recursive, &shelf)?;
     }
     Ok(ImportReport { imported, skipped })
 }
@@ -688,7 +774,12 @@ pub fn refresh_watched(app: &AppHandle, state: &AppState) -> Result<usize, Strin
     for folder in folders {
         let files = collect_audio(&[folder.path], folder.recursive);
         for path in files {
-            if import_one(&conn, &state.data_dir, &path, false)? {
+            let shelf = if folder.shelf_id.is_empty() {
+                resolve_shelf(&conn, None)?
+            } else {
+                folder.shelf_id.clone()
+            };
+            if import_one(&conn, &state.data_dir, &path, false, &shelf)? {
                 imported += 1;
             }
         }
@@ -701,13 +792,14 @@ pub fn refresh_watched(app: &AppHandle, state: &AppState) -> Result<usize, Strin
 
 fn watched_folders(conn: &Connection) -> Result<Vec<WatchedFolder>, String> {
     let mut stmt = conn
-        .prepare("SELECT path, recursive FROM watched_folders ORDER BY path COLLATE NOCASE")
+        .prepare("SELECT path, recursive, shelf_id FROM watched_folders ORDER BY path COLLATE NOCASE")
         .map_err(|err| err.to_string())?;
     let rows = stmt
         .query_map([], |row| {
             Ok(WatchedFolder {
                 path: row.get(0)?,
                 recursive: row.get::<_, i64>(1)? != 0,
+                shelf_id: row.get(2)?,
             })
         })
         .map_err(|err| err.to_string())?
@@ -716,23 +808,23 @@ fn watched_folders(conn: &Connection) -> Result<Vec<WatchedFolder>, String> {
     Ok(rows)
 }
 
-fn remember_watched(conn: &Connection, paths: &[String], recursive: bool) -> Result<(), String> {
+fn remember_watched(conn: &Connection, paths: &[String], recursive: bool, shelf_id: &str) -> Result<(), String> {
     for raw in paths {
         let path = PathBuf::from(raw);
         if !path.is_dir() {
             continue;
         }
         conn.execute(
-            "INSERT INTO watched_folders (path, recursive) VALUES (?1, ?2)
-             ON CONFLICT(path) DO UPDATE SET recursive = excluded.recursive",
-            params![path.to_string_lossy().to_string(), i64::from(recursive)],
+            "INSERT INTO watched_folders (path, recursive, shelf_id) VALUES (?1, ?2, ?3)
+             ON CONFLICT(path) DO UPDATE SET recursive = excluded.recursive, shelf_id = excluded.shelf_id",
+            params![path.to_string_lossy().to_string(), i64::from(recursive), shelf_id],
         )
         .map_err(|err| err.to_string())?;
     }
     Ok(())
 }
 
-fn import_one(conn: &Connection, data_dir: &Path, path: &Path, revive: bool) -> Result<bool, String> {
+fn import_one(conn: &Connection, data_dir: &Path, path: &Path, revive: bool, shelf_id: &str) -> Result<bool, String> {
     let path_str = path.to_string_lossy().to_string();
     if revive {
         conn.execute("DELETE FROM dismissed_paths WHERE path = ?1", [&path_str])
@@ -776,8 +868,8 @@ fn import_one(conn: &Connection, data_dir: &Path, path: &Path, revive: bool) -> 
     };
     let sort_index = next_sort_index(conn)?;
     conn.execute(
-        "INSERT INTO tracks (id, path, storage, content_hash, title, artist, album, duration_ms, cover_path, lyrics, missing, added_at, sort_index)
-         VALUES (?1, ?2, 'linked', ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11)",
+        "INSERT INTO tracks (id, path, storage, content_hash, title, artist, album, duration_ms, cover_path, lyrics, missing, added_at, sort_index, shelf_id)
+         VALUES (?1, ?2, 'linked', ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11, ?12)",
         params![
             id,
             path_str,
@@ -790,6 +882,7 @@ fn import_one(conn: &Connection, data_dir: &Path, path: &Path, revive: bool) -> 
             tags.lyrics.unwrap_or_default(),
             now_secs(),
             sort_index,
+            shelf_id,
         ],
     )
     .map_err(|err| err.to_string())?;
@@ -876,7 +969,44 @@ fn map_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<TrackDto> {
         gain: row.get(10)?,
         missing: row.get::<_, i64>(11)? != 0,
         added_at: row.get(12)?,
+        shelf_id: row.get(13)?,
     })
+}
+
+fn query_shelves(conn: &Connection) -> Result<Vec<ShelfDto>, String> {
+    let mut stmt = conn
+        .prepare("SELECT id, name, kind FROM shelves ORDER BY created_at, name COLLATE NOCASE")
+        .map_err(|err| err.to_string())?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(ShelfDto {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                kind: row.get(2)?,
+            })
+        })
+        .map_err(|err| err.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())?;
+    Ok(rows)
+}
+
+fn resolve_shelf(conn: &Connection, requested: Option<&str>) -> Result<String, String> {
+    if let Some(id) = requested {
+        let found: Option<String> = conn
+            .query_row("SELECT id FROM shelves WHERE id = ?1", [id], |row| row.get(0))
+            .optional()
+            .map_err(|err| err.to_string())?;
+        if let Some(id) = found {
+            return Ok(id);
+        }
+    }
+    conn.query_row("SELECT id FROM shelves ORDER BY created_at LIMIT 1", [], |row| row.get(0))
+        .map_err(|err| err.to_string())
+}
+
+fn shelf_kind(kind: &str) -> &'static str {
+    if kind == "podcast" { "podcast" } else { "music" }
 }
 
 fn track_ids_of(conn: &Connection, playlist_id: &str) -> Result<Vec<String>, String> {
@@ -949,7 +1079,7 @@ pub fn store_image(dir: &Path, id: &str, source: &Path) -> Result<String, String
 
 fn finite_unit(value: f32, fallback: f32) -> f32 {
     if value.is_finite() {
-        value.clamp(0.0, 1.0)
+        value.clamp(0.0, 2.0)
     } else {
         fallback
     }
@@ -1022,7 +1152,7 @@ mod tests {
             &root,
             &copy,
             &hash,
-            OwnedMeta { title: "Song", artist: "", album: "", lyrics: "" },
+            OwnedMeta { title: "Song", artist: "", album: "", lyrics: "", synced_lyrics: "" },
             None,
         )
         .unwrap();
@@ -1054,15 +1184,15 @@ mod tests {
         let conn = crate::db::open(&root.join("library.db")).unwrap();
         let audio = root.join("song.mp3");
         fs::write(&audio, b"audio").unwrap();
-        assert!(import_one(&conn, &root, &audio, true).unwrap());
+        assert!(import_one(&conn, &root, &audio, true, "").unwrap());
         conn.execute("DELETE FROM tracks", []).unwrap();
         conn.execute(
             "INSERT INTO dismissed_paths (path) VALUES (?1)",
             [audio.to_string_lossy().to_string()],
         )
         .unwrap();
-        assert!(!import_one(&conn, &root, &audio, false).unwrap());
-        assert!(import_one(&conn, &root, &audio, true).unwrap());
+        assert!(!import_one(&conn, &root, &audio, false, "").unwrap());
+        assert!(import_one(&conn, &root, &audio, true, "").unwrap());
         let _ = fs::remove_dir_all(root);
     }
 }

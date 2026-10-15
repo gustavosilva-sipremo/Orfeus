@@ -8,6 +8,7 @@ export const packageTrackSchema = z.object({
   artist: z.string(),
   album: z.string(),
   lyrics: z.string(),
+  syncedLyrics: z.string().optional().default(""),
   cover: z.string().nullable(),
 })
 

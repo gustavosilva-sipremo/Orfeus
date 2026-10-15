@@ -1,4 +1,4 @@
-import { FolderArchive, Library, Plus } from "lucide-react"
+import { FolderArchive, Music, Plus, Podcast, X } from "lucide-react"
 import { useState } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { Cover } from "@/components/Cover"
@@ -35,14 +35,20 @@ function PaintingCredit() {
   )
 }
 
-export function Sidebar() {
+export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const view = useLibrary((state) => state.view)
+  const shelves = useLibrary((state) => state.shelves)
   const playlists = useLibrary((state) => state.playlists)
   const setView = useLibrary((state) => state.setView)
   const createPlaylist = useLibrary((state) => state.createPlaylist)
+  const createShelf = useLibrary((state) => state.createShelf)
+  const setShelfKind = useLibrary((state) => state.setShelfKind)
+  const removeShelf = useLibrary((state) => state.removeShelf)
   const importPackage = useLibrary((state) => state.importPackage)
   const [openNew, setOpenNew] = useState(false)
+  const [openShelf, setOpenShelf] = useState(false)
   const [name, setName] = useState("")
+  const [shelfName, setShelfName] = useState("")
 
   async function onImportPackage() {
     if (!api.desktop()) {
@@ -58,23 +64,57 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="glass flex w-80 shrink-0 flex-col border-r">
+    <aside className="glass flex h-full w-72 max-w-[86vw] shrink-0 flex-col border-r md:w-80">
       <div className="px-5 pt-6 pb-4">
-        <p className="text-xs tracking-[0.32em] text-gold uppercase">local library</p>
+        <p className="mb-3 text-xs tracking-[0.32em] text-gold uppercase">local library</p>
         <div className="mt-1 flex items-center gap-3">
           <img src="/favicon.svg" alt="" className="size-12 rounded-xl" />
           <h1 className="serif text-4xl italic">Orfeus</h1>
         </div>
       </div>
       <nav className="flex min-h-0 flex-1 flex-col gap-1 px-3">
-        <button
-          type="button"
-          className={cn("flex cursor-pointer items-center gap-2 rounded-md px-3 py-2.5 text-left text-base", view.kind === "library" && "bg-accent")}
-          onClick={() => setView({ kind: "library" })}
-        >
-          <Library className="size-5 text-primary" />
-          Library
-        </button>
+        <div className="flex items-center justify-between px-3">
+          <span className="text-xs tracking-[0.22em] text-muted-foreground uppercase">Libraries</span>
+          <Button variant="ghost" size="icon" onClick={() => setOpenShelf(true)} aria-label="New library">
+            <Plus className="size-5" />
+          </Button>
+        </div>
+        {shelves.map((shelf) => {
+          const active = view.kind === "library" && view.id === shelf.id
+          const podcast = shelf.kind === "podcast"
+          return (
+            <div key={shelf.id} className={cn("flex items-center gap-1 rounded-md pr-1", active && "bg-accent")}>
+              <button
+                type="button"
+                className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-md"
+                aria-label={podcast ? "Use the music icon" : "Use the podcast icon"}
+                onClick={() => void setShelfKind(shelf.id, podcast ? "music" : "podcast").catch((reason: unknown) => useLibrary.setState({ error: message(reason) }))}
+              >
+                {podcast ? <Podcast className="size-5 text-primary" /> : <Music className="size-5 text-primary" />}
+              </button>
+              <button
+                type="button"
+                className="min-w-0 flex-1 cursor-pointer truncate py-2.5 text-left text-base"
+                onClick={() => {
+                  setView({ kind: "library", id: shelf.id })
+                  onNavigate?.()
+                }}
+              >
+                {shelf.name}
+              </button>
+              {shelves.length > 1 ? (
+                <button
+                  type="button"
+                  className="flex size-8 cursor-pointer items-center justify-center rounded-md text-white/70"
+                  aria-label={`Remove ${shelf.name}`}
+                  onClick={() => void removeShelf(shelf.id).catch((reason: unknown) => useLibrary.setState({ error: message(reason) }))}
+                >
+                  <X className="size-4" />
+                </button>
+              ) : null}
+            </div>
+          )
+        })}
         <div className="mt-4 flex items-center justify-between px-3">
           <span className="text-xs tracking-[0.22em] text-muted-foreground uppercase">Playlists</span>
           <Button variant="ghost" size="icon" onClick={() => setOpenNew(true)} aria-label="New playlist">
@@ -90,7 +130,10 @@ export function Sidebar() {
                 key={playlist.id}
                 type="button"
                 className={cn("flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left", active && "bg-accent")}
-                onClick={() => setView({ kind: "playlist", id: playlist.id })}
+                onClick={() => {
+                  setView({ kind: "playlist", id: playlist.id })
+                  onNavigate?.()
+                }}
               >
                 <Cover path={playlist.coverPath} className="size-10 rounded" />
                 <span className="min-w-0">
@@ -127,6 +170,29 @@ export function Sidebar() {
             }}
           >
             <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Playlist name" autoFocus />
+            <Button type="submit">Create</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={openShelf} onOpenChange={setOpenShelf}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New library</DialogTitle>
+          </DialogHeader>
+          <form
+            className="space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault()
+              const next = shelfName.trim()
+              if (!next) return
+              void createShelf(next).catch((error: unknown) => useLibrary.setState({ error: message(error) }))
+              setShelfName("")
+              setOpenShelf(false)
+              onNavigate?.()
+            }}
+          >
+            <Input value={shelfName} onChange={(event) => setShelfName(event.target.value)} placeholder="Library name" autoFocus />
+            <p className="text-sm text-muted-foreground">Tap the icon beside a library to switch between music and podcast.</p>
             <Button type="submit">Create</Button>
           </form>
         </DialogContent>
