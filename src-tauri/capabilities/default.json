@@ -1,0 +1,9 @@
+{
+  "identifier": "default",
+  "description": "Permissões do Orfeus desktop",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default"
+  ]
+}
