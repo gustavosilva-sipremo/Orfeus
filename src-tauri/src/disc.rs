@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
+#[cfg(target_os = "linux")]
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter};
 

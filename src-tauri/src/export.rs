@@ -1,7 +1,10 @@
 use std::fs;
-use std::io::ErrorKind;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+use std::io::ErrorKind;
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+use std::process::Stdio;
 
 use tauri::{AppHandle, Emitter, State};
 

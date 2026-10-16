@@ -214,9 +214,9 @@ export function YouTubeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                   className="border-[#3a3a3a] bg-[#1c1c1c] pr-11 shadow-none ring-0 outline-none focus-visible:border-white focus-visible:ring-0"
                 />
                 {url && !running ? (
-                  <Button type="button" variant="ghost" size="icon" className="absolute top-0 right-0" aria-label="Clear link" onClick={() => setUrl("")}>
+                  <button type="button" className="absolute top-0 right-0 flex size-11 cursor-pointer items-center justify-center" aria-label="Clear link" onClick={() => setUrl("")}>
                     <X className="size-4" />
-                  </Button>
+                  </button>
                 ) : null}
               </div>
               <Button type="submit" variant="outline" disabled={running || !url.trim()}>

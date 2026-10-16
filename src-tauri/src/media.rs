@@ -1,8 +1,13 @@
+#[cfg(target_os = "linux")]
 use std::thread;
+#[cfg(target_os = "linux")]
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
+#[cfg(target_os = "linux")]
+use tauri::Manager;
 
+#[cfg(target_os = "linux")]
 use crate::AppState;
 
 pub fn start(app: AppHandle) {

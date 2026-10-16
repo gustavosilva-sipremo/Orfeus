@@ -177,12 +177,11 @@ pub fn youtube_reveal(path: String) -> Result<(), String> {
 }
 
 fn probe_blocking(data_dir: &Path, url: &str) -> Result<YoutubeProbe, String> {
-    let (python, script) = ensure_runtime(data_dir)?;
+    let runtime = ensure_runtime(data_dir)?;
     let mut probe = None;
     let mut error = None;
     run_script(
-        &python,
-        &script,
+        &runtime,
         &["probe".into(), "--url".into(), url.into()],
         &mut |event| {
             let kind = event.event.clone();
@@ -218,7 +217,7 @@ fn download_blocking(
     resolution: Option<u32>,
 ) -> Result<YoutubeDone, String> {
     emit_progress(&app, "prepare", 0.0, "Preparing the downloader");
-    let (python, script) = ensure_runtime(data_dir)?;
+    let runtime = ensure_runtime(data_dir)?;
     let work = data_dir.join("youtube-tmp").join(uuid::Uuid::new_v4().to_string());
     fs::create_dir_all(&work).map_err(|err| err.to_string())?;
     let mut done = None;
@@ -238,7 +237,7 @@ fn download_blocking(
         "--resolution".into(),
         resolution.map(|height| height.to_string()).unwrap_or_default(),
     ];
-    let run = run_script(&python, &script, &args, &mut |event| {
+    let run = run_script(&runtime, &args, &mut |event| {
         let kind = event.event.clone();
         match kind.as_str() {
             "progress" => emit_progress(&app, &event.phase, event.percent, &event.label),
@@ -278,49 +277,75 @@ fn emit_progress(app: &AppHandle, phase: &str, percent: f32, label: &str) {
     );
 }
 
-fn create_venv(root: &Path) -> Result<(), String> {
-    let launchers: &[&[&str]] = if cfg!(windows) {
-        &[&["py", "-3"], &["python"], &["python3"]]
+struct Runtime {
+    command: Vec<String>,
+    script: PathBuf,
+    libs: PathBuf,
+}
+
+fn python_launchers() -> Vec<Vec<String>> {
+    if cfg!(windows) {
+        vec![vec!["py".into(), "-3".into()], vec!["python".into()], vec!["python3".into()]]
     } else {
-        &[&["python3"], &["python"]]
-    };
-    let mut saw_python = false;
-    for launcher in launchers {
-        let mut command = Command::new(launcher[0]);
-        if launcher.len() > 1 {
-            command.args(&launcher[1..]);
-        }
-        match command.args(["-m", "venv"]).arg(root).status() {
-            Ok(status) if status.success() => return Ok(()),
-            Ok(_) => saw_python = true,
-            Err(_) => {}
-        }
-    }
-    if saw_python {
-        Err("Could not create the Python environment.".into())
-    } else {
-        Err("Python 3 was not found. Install Python and try again.".into())
+        vec![vec!["python3".into()], vec!["python".into()]]
     }
 }
 
-fn ensure_runtime(data_dir: &Path) -> Result<(PathBuf, PathBuf), String> {
+fn prepare_python(command: &mut Command) {
+    command.env_remove("PYTHONHOME");
+    command.env_remove("PYTHONPATH");
+    command.env_remove("PYTHONSTARTUP");
+    command.env("PYTHONNOUSERSITE", "1");
+    command.env("PYTHONUNBUFFERED", "1");
+    command.env("PYTHONWARNINGS", "ignore");
+}
+
+fn python_command(argv: &[String]) -> Command {
+    let mut command = Command::new(&argv[0]);
+    prepare_python(&mut command);
+    if argv.len() > 1 {
+        command.args(&argv[1..]);
+    }
+    command
+}
+
+fn python_starts(argv: &[String]) -> bool {
+    python_command(argv)
+        .args(["-c", "import encodings"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn find_python() -> Result<Vec<String>, String> {
+    for launcher in python_launchers() {
+        if python_starts(&launcher) {
+            return Ok(launcher);
+        }
+    }
+    Err("Python 3 was not found, or it started without its standard library. Install Python 3 and try again.".into())
+}
+
+fn ensure_runtime(data_dir: &Path) -> Result<Runtime, String> {
     if Command::new("ffmpeg").arg("-version").output().is_err() {
         return Err("ffmpeg was not found. Install ffmpeg and try again.".into());
     }
-    let root = data_dir.join("pyenv");
-    fs::create_dir_all(&root).map_err(|err| err.to_string())?;
-    let python = venv_python(&root);
-    if !python.is_file() {
-        create_venv(&root)?;
-    }
+    let command = find_python()?;
+    let libs = data_dir.join("pylibs");
+    fs::create_dir_all(&libs).map_err(|err| err.to_string())?;
     let requirements = include_str!("../../python/requirements.txt");
-    let req_path = root.join("requirements.txt");
-    let installed = root.join(".installed");
+    let req_path = data_dir.join("requirements.txt");
+    let installed = data_dir.join(".pylibs-installed");
     let current = fs::read_to_string(&req_path).unwrap_or_default();
     if current != requirements || !installed.is_file() {
         fs::write(&req_path, requirements).map_err(|err| err.to_string())?;
-        let output = Command::new(&python)
-            .args(["-m", "pip", "install", "-r"])
+        let output = python_command(&command)
+            .args(["-m", "pip", "install", "--disable-pip-version-check", "--target"])
+            .arg(&libs)
+            .arg("-r")
             .arg(&req_path)
             .output()
             .map_err(|err| format!("Could not install pytubefix. {err}"))?;
@@ -334,25 +359,24 @@ fn ensure_runtime(data_dir: &Path) -> Result<(PathBuf, PathBuf), String> {
         }
         fs::write(&installed, "ok").map_err(|err| err.to_string())?;
     }
-    let script_path = root.join("youtube.py");
+    let script_path = data_dir.join("youtube.py");
     let script = include_str!("../../python/youtube.py");
     if fs::read_to_string(&script_path).unwrap_or_default() != script {
         fs::write(&script_path, script).map_err(|err| err.to_string())?;
     }
-    Ok((python, script_path))
+    Ok(Runtime { command, script: script_path, libs })
 }
 
-fn run_script(python: &Path, script: &Path, args: &[String], on_event: &mut dyn FnMut(ScriptEvent)) -> Result<(), String> {
+fn run_script(runtime: &Runtime, args: &[String], on_event: &mut dyn FnMut(ScriptEvent)) -> Result<(), String> {
     if DOWNLOAD_CANCEL.swap(false, Ordering::SeqCst) {
         return Err("Skipped.".into());
     }
-    let mut child = Command::new(python)
-        .arg(script)
+    let mut child = python_command(&runtime.command)
+        .arg(&runtime.script)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env("PYTHONUNBUFFERED", "1")
-        .env("PYTHONWARNINGS", "ignore")
+        .env("PYTHONPATH", &runtime.libs)
         .spawn()
         .map_err(|err| err.to_string())?;
     let pid = child.id();
@@ -476,14 +500,6 @@ fn folder(path: &str, label: &str) -> Result<PathBuf, String> {
         return Err(format!("Choose a folder for the {label}."));
     }
     Ok(path)
-}
-
-fn venv_python(root: &Path) -> PathBuf {
-    if cfg!(windows) {
-        root.join("Scripts").join("python.exe")
-    } else {
-        root.join("bin").join("python")
-    }
 }
 
 fn tail_text(bytes: &[u8]) -> String {

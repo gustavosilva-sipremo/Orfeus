@@ -92,7 +92,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 The script installs the npm packages and runs `npm run tauri build -- --bundles nsis`. That produces a setup wizard:
 
 ```text
-src-tauri\target\release\bundle\nsis\Orfeus_1.0.0_x64-setup.exe
+src-tauri\target\release\bundle\nsis\Orfeus_1.5.0_x64-setup.exe
 ```
 
 The version in the file name follows `version` in `src-tauri/tauri.conf.json`. Double-click the `.exe`. The wizard asks whether to install for the current user or for everyone, then copies Orfeus and adds it to the Start menu. You can copy that setup file to another PC and run it there without the source tree.
