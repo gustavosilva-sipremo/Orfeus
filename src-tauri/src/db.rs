@@ -67,7 +67,17 @@ fn migrate(conn: &Connection) -> Result<(), String> {
         );
         CREATE TABLE IF NOT EXISTS dismissed_paths (
             path TEXT PRIMARY KEY
-        );",
+        );
+        CREATE TABLE IF NOT EXISTS plays (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            track_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            artist TEXT NOT NULL DEFAULT '',
+            cover_path TEXT,
+            played_at INTEGER NOT NULL,
+            seconds INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_plays_time ON plays (played_at);",
     )
     .map_err(|err| err.to_string())?;
     ensure_shelves(conn)

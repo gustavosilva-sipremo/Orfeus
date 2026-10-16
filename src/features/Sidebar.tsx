@@ -1,40 +1,16 @@
-import { FolderArchive, Music, Plus, Podcast, Trash2, X } from "lucide-react"
+import { BarChart3, FolderArchive, Images, Keyboard, Music, Plus, Podcast, Trash2, X } from "lucide-react"
 import { useState } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { Cover } from "@/components/Cover"
+import { LightMenu } from "@/components/kit/LightMenu"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import * as api from "@/lib/api"
 import { tally } from "@/lib/format"
-import { cn, message } from "@/lib/utils"
+import { message } from "@/lib/utils"
 import { version } from "../../package.json"
 import { useLibrary } from "@/stores/library"
-
-function PaintingCredit() {
-  const [openCredit, setOpenCredit] = useState(false)
-  return (
-    <>
-      <button type="button" className="w-full cursor-pointer px-1 text-left text-xs leading-relaxed text-white/70" onClick={() => setOpenCredit(true)}>
-        Background: Orpheus and Eurydice, Peter Paul Rubens, 1636–1638
-      </button>
-      <Dialog open={openCredit} onOpenChange={setOpenCredit}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Orpheus and Eurydice</DialogTitle>
-          </DialogHeader>
-          <dl className="space-y-2 text-sm leading-relaxed">
-            <div><dt className="text-muted-foreground">Artist</dt><dd>Peter Paul Rubens (1577–1640)</dd></div>
-            <div><dt className="text-muted-foreground">Title</dt><dd>Orpheus and Eurydice</dd></div>
-            <div><dt className="text-muted-foreground">Type</dt><dd>Mythological painting</dd></div>
-            <div><dt className="text-muted-foreground">Subject</dt><dd>Orpheus and Eurydice</dd></div>
-            <div><dt className="text-muted-foreground">Date</dt><dd>1636–1638</dd></div>
-          </dl>
-        </DialogContent>
-      </Dialog>
-    </>
-  )
-}
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const view = useLibrary((state) => state.view)
@@ -52,6 +28,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const [openShelf, setOpenShelf] = useState(false)
   const [name, setName] = useState("")
   const [shelfName, setShelfName] = useState("")
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
 
   async function onImportPackage() {
     if (!api.desktop()) {
@@ -69,102 +46,134 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <aside className="glass flex h-full w-72 max-w-[86vw] shrink-0 flex-col border-r md:w-80">
       <div className="px-5 pt-6 pb-4">
-        <p className="mb-3 text-xs tracking-[0.32em] text-gold uppercase">local library</p>
-        <div className="mt-1 flex items-center gap-3">
+        <div className="flex items-center gap-3">
           <img src="/favicon.svg" alt="" className="size-12 rounded-xl" />
           <h1 className="serif text-4xl italic">Orfeus</h1>
         </div>
       </div>
-      <nav className="flex min-h-0 flex-1 flex-col gap-1 px-3">
+      <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 scrollbar-gutter-stable">
         <div className="flex items-center justify-between px-3">
           <span className="text-xs tracking-[0.22em] text-muted-foreground uppercase">Libraries</span>
           <Button variant="ghost" size="icon" onClick={() => setOpenShelf(true)} aria-label="New library">
             <Plus className="size-5" />
           </Button>
         </div>
-        {shelves.map((shelf) => {
-          const active = view.kind === "library" && view.id === shelf.id
-          const podcast = shelf.kind === "podcast"
-          return (
-            <div key={shelf.id} className={cn("flex items-center gap-1 rounded-md pr-1", active && "bg-accent")}>
-              <button
-                type="button"
-                className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-md"
-                aria-label={podcast ? "Use the music icon" : "Use the podcast icon"}
-                onClick={() => void setShelfKind(shelf.id, podcast ? "music" : "podcast").catch((reason: unknown) => useLibrary.setState({ error: message(reason) }))}
-              >
-                {podcast ? <Podcast className="size-5 text-primary" /> : <Music className="size-5 text-primary" />}
-              </button>
-              <button
-                type="button"
-                className="min-w-0 flex-1 cursor-pointer truncate py-2.5 text-left text-base"
-                onClick={() => {
-                  setView({ kind: "library", id: shelf.id })
-                  onNavigate?.()
-                }}
-              >
-                {shelf.name}
-              </button>
-              {shelves.length > 1 ? (
-                <button
-                  type="button"
-                  className="flex size-8 cursor-pointer items-center justify-center rounded-md text-white/70"
-                  aria-label={`Remove ${shelf.name}`}
-                  onClick={() => void removeShelf(shelf.id).catch((reason: unknown) => useLibrary.setState({ error: message(reason) }))}
-                >
-                  <X className="size-4" />
-                </button>
-              ) : null}
-            </div>
-          )
-        })}
-        <button
-          type="button"
-          className={cn("mt-3 flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-left", view.kind === "trash" && "bg-accent")}
-          onClick={() => {
-            setView({ kind: "trash" })
+        <LightMenu
+          label="Libraries"
+          value={view.kind === "library" ? view.id : view.kind}
+          onValueChange={(next) => {
+            if (next === "covers" || next === "status" || next === "trash") setView({ kind: next })
+            else setView({ kind: "library", id: next })
             onNavigate?.()
           }}
-        >
-          <Trash2 className="size-5 text-primary" />
-          <span className="min-w-0 flex-1">
-            <span className="block text-base">Trash</span>
-            <span className="text-sm text-muted-foreground">{trashCount === 1 ? "1 track" : `${trashCount} tracks`}</span>
-          </span>
-        </button>
+          options={[
+            ...shelves.map((shelf) => {
+              const podcast = shelf.kind === "podcast"
+              return {
+                value: shelf.id,
+                label: (
+                  <span className="flex h-full w-full items-center gap-3">
+                    <span
+                      role="presentation"
+                      className="flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-white/10"
+                      aria-label={podcast ? "Use the music icon" : "Use the podcast icon"}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void setShelfKind(shelf.id, podcast ? "music" : "podcast").catch((reason: unknown) => useLibrary.setState({ error: message(reason) }))
+                      }}
+                    >
+                      {podcast ? <Podcast className="size-5" /> : <Music className="size-5" />}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{shelf.name}</span>
+                    {shelves.length > 1 ? (
+                      <span
+                        role="presentation"
+                        className="flex size-8 items-center justify-center rounded-md text-white/70 hover:bg-white/10 hover:text-white"
+                        aria-label={`Remove ${shelf.name}`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void removeShelf(shelf.id).catch((reason: unknown) => useLibrary.setState({ error: message(reason) }))
+                        }}
+                      >
+                        <X className="size-4" />
+                      </span>
+                    ) : null}
+                  </span>
+                ),
+              }
+            }),
+            {
+              value: "covers",
+              label: (
+                <span className="flex h-full w-full items-center gap-3">
+                  <span className="flex size-8 shrink-0 items-center justify-center">
+                    <Images className="size-5" />
+                  </span>
+                  <span>Covers</span>
+                </span>
+              ),
+            },
+            {
+              value: "status",
+              label: (
+                <span className="flex h-full w-full items-center gap-3">
+                  <span className="flex size-8 shrink-0 items-center justify-center">
+                    <BarChart3 className="size-5" />
+                  </span>
+                  <span>Status</span>
+                </span>
+              ),
+            },
+            {
+              value: "trash",
+              label: (
+                <span className="flex h-full w-full items-center gap-3">
+                  <span className="flex size-8 shrink-0 items-center justify-center">
+                    <Trash2 className="size-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">Trash</span>
+                  <span className="text-sm text-muted-foreground">{trashCount}</span>
+                </span>
+              ),
+            },
+          ]}
+        />
         <div className="mt-4 flex items-center justify-between px-3">
           <span className="text-xs tracking-[0.22em] text-muted-foreground uppercase">Playlists</span>
           <Button variant="ghost" size="icon" onClick={() => setOpenNew(true)} aria-label="New playlist">
             <Plus className="size-5" />
           </Button>
         </div>
-        <div className="min-h-0 flex-1 space-y-1 overflow-auto pb-3">
-          {playlists.length === 0 ? <p className="px-3 py-2 text-sm text-muted-foreground">No playlists yet.</p> : null}
-          {playlists.map((playlist) => {
-            const active = view.kind === "playlist" && view.id === playlist.id
-            const members = playlist.trackIds.flatMap((id) => {
-              const track = tracks.find((item) => item.id === id)
-              return track ? [track] : []
-            })
-            const summary = `${members.length} tracks · ${tally(members)}`
-            return (
-              <button
-                key={playlist.id}
-                type="button"
-                className={cn("flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left", active && "bg-accent")}
-                onClick={() => {
-                  setView({ kind: "playlist", id: playlist.id })
-                  onNavigate?.()
-                }}
-              >
-                <Cover path={playlist.coverPath} className="size-10 rounded" />
-                <span className="min-w-0">
-                  <span className="block truncate text-base">{playlist.name}</span>
-                  <span className="block truncate text-sm text-muted-foreground" title={summary}>{summary}</span>
-                </span>
-              </button>
-            )
-          })}
+        <div className="pb-3">
+          {playlists.length === 0 ? <p className="px-3 py-2 text-sm text-muted-foreground">No playlists yet.</p> : (
+            <LightMenu
+              label="Playlists"
+              value={view.kind === "playlist" ? view.id : ""}
+              onValueChange={(id) => {
+                setView({ kind: "playlist", id })
+                onNavigate?.()
+              }}
+              options={playlists.map((playlist) => {
+                const members = playlist.trackIds.flatMap((id) => {
+                  const track = tracks.find((item) => item.id === id)
+                  return track ? [track] : []
+                })
+                const summary = `${members.length} tracks · ${tally(members)}`
+                return {
+                  value: playlist.id,
+                  label: (
+                    <span className="flex h-full w-full items-center gap-3">
+                      <Cover path={playlist.coverPath} className="size-8 shrink-0 rounded" />
+                      <span className="min-w-0">
+                        <span className="block truncate leading-tight">{playlist.name}</span>
+                        <span className="block truncate text-xs leading-tight text-muted-foreground" title={summary}>{summary}</span>
+                      </span>
+                    </span>
+                  ),
+                }
+              })}
+            />
+          )}
         </div>
       </nav>
       <div className="space-y-2 border-t border-white/10 p-3">
@@ -172,9 +181,28 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <FolderArchive className="size-5" />
           Import package
         </Button>
-        <PaintingCredit />
+        <Button variant="ghost" className="w-full" onClick={() => setShortcutsOpen(true)}>
+          <Keyboard className="size-5" />
+          Shortcuts
+        </Button>
         <p className="px-1 text-[11px] tracking-wide text-white/40">v{version}</p>
       </div>
+      <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Shortcuts</DialogTitle>
+          </DialogHeader>
+          <ul className="space-y-2 text-base">
+            <li className="flex justify-between gap-4"><span>Play or pause</span><span className="text-muted-foreground">Space</span></li>
+            <li className="flex justify-between gap-4"><span>Back 5 seconds</span><span className="text-muted-foreground">Left</span></li>
+            <li className="flex justify-between gap-4"><span>Forward 5 seconds</span><span className="text-muted-foreground">Right</span></li>
+            <li className="flex justify-between gap-4"><span>Previous track</span><span className="text-muted-foreground">Alt + Left</span></li>
+            <li className="flex justify-between gap-4"><span>Next track</span><span className="text-muted-foreground">Alt + Right</span></li>
+            <li className="flex justify-between gap-4"><span>Listing size</span><span className="text-muted-foreground">Alt + scroll</span></li>
+            <li className="flex justify-between gap-4"><span>Track actions</span><span className="text-muted-foreground">Right click</span></li>
+          </ul>
+        </DialogContent>
+      </Dialog>
       <Dialog open={openNew} onOpenChange={setOpenNew}>
         <DialogContent>
           <DialogHeader>
@@ -191,7 +219,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               setOpenNew(false)
             }}
           >
-            <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Playlist name" autoFocus />
+            <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Playlist name" maxLength={80} autoFocus />
             <Button type="submit">Create</Button>
           </form>
         </DialogContent>
@@ -213,7 +241,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               onNavigate?.()
             }}
           >
-            <Input value={shelfName} onChange={(event) => setShelfName(event.target.value)} placeholder="Library name" autoFocus />
+            <Input value={shelfName} onChange={(event) => setShelfName(event.target.value)} placeholder="Library name" maxLength={80} autoFocus />
             <p className="text-sm text-muted-foreground">Tap the icon beside a library to switch between music and podcast.</p>
             <Button type="submit">Create</Button>
           </form>

@@ -1,10 +1,11 @@
-import { Pause, Play, Repeat, Repeat1, SkipBack, SkipForward, Volume1, Volume2, VolumeX } from "lucide-react"
+import { Pause, Play, Repeat, Repeat1, RotateCcw, RotateCw, SkipBack, SkipForward, Volume1, Volume2, VolumeX } from "lucide-react"
 import { useState } from "react"
 import { Cover } from "@/components/Cover"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { artistLabel, crossfadeLabel, formatClock, loopLabel, rateLabel } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import { usePlayer } from "@/stores/player"
 
 export function PlayerBar() {
@@ -26,12 +27,13 @@ export function PlayerBar() {
   const crossfade = usePlayer((state) => state.crossfade)
   const cycleCrossfade = usePlayer((state) => state.cycleCrossfade)
   const setStageOpen = usePlayer((state) => state.setStageOpen)
+  const stageOpen = usePlayer((state) => state.stageOpen)
   const [scrub, setScrub] = useState<number | null>(null)
   const shown = scrub ?? (duration ? position / duration : 0)
   const disabled = !trackId
 
   return (
-    <footer className="glass relative z-40 border-t px-3 py-2 sm:px-4 sm:py-3">
+    <footer className={cn("glass relative z-30 border-t px-3 py-2 sm:px-4 sm:py-3", stageOpen && "invisible")} aria-hidden={stageOpen}>
       <div className="flex flex-col gap-2 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(16rem,1.5fr)_auto] lg:items-center lg:gap-4">
         <button type="button" className="flex min-w-0 cursor-pointer items-center gap-3 text-left disabled:cursor-not-allowed" onClick={() => setStageOpen(true)} disabled={disabled}>
           <Cover path={coverPath} className="size-12 shrink-0 rounded-md sm:size-14" />
@@ -41,12 +43,18 @@ export function PlayerBar() {
           </span>
         </button>
         <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-center gap-4">
+          <div className="flex items-center justify-center gap-2">
             <Button variant="ghost" size="icon" onClick={() => void previous()} disabled={disabled} aria-label="Previous">
               <SkipBack className="size-5" />
             </Button>
+            <Button variant="ghost" size="icon" onClick={() => void seek(Math.max(0, position - 5))} disabled={disabled} aria-label="Back 5 seconds">
+              <RotateCcw className="size-5" />
+            </Button>
             <Button size="icon" className="size-12" onClick={() => void toggle()} disabled={disabled} aria-label={playing ? "Pause" : "Play"}>
               {playing ? <Pause className="size-6" /> : <Play className="size-6" />}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => void seek(position + 5)} disabled={disabled} aria-label="Forward 5 seconds">
+              <RotateCw className="size-5" />
             </Button>
             <Button variant="ghost" size="icon" onClick={() => void next()} disabled={disabled} aria-label="Next">
               <SkipForward className="size-5" />

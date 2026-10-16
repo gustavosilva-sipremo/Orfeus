@@ -146,3 +146,46 @@
   background: rgba(255, 255, 255, 0.22);
   border-radius: 999px;
 }
+
+@keyframes cover-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes cover-view {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes cover-drift {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.07);
+  }
+}
+
+.cover-rise {
+  animation: cover-rise 0.55s ease both;
+}
+
+.cover-view {
+  animation: cover-view 0.45s ease both;
+}
+
+.cover-drift {
+  animation: cover-drift 14s ease-in-out alternate infinite;
+}

@@ -1,4 +1,4 @@
-import { invoke, isTauri } from "@tauri-apps/api/core"
+import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core"
 
 const covers = new Map<string, Promise<string>>()
 
@@ -6,6 +6,12 @@ export function mediaUrl(path: string | null | undefined) {
   if (!path) return null
   if (path.startsWith("https://") || path.startsWith("data:") || path.startsWith("blob:")) return path
   return null
+}
+
+export function localCoverUrl(path: string | null | undefined) {
+  if (!path || !isTauri()) return null
+  if (path.startsWith("https://") || path.startsWith("data:") || path.startsWith("blob:") || path.startsWith("asset:")) return path
+  return convertFileSrc(path)
 }
 
 export function loadCover(path: string): Promise<string | null> {

@@ -5,10 +5,10 @@ import type { LoopMode, Playlist, SearchReport, Shelf, Track } from "@/lib/types
 import { message } from "@/lib/utils"
 import { usePlayer } from "@/stores/player"
 
-type View = { kind: "library"; id: string } | { kind: "playlist"; id: string } | { kind: "trash" }
+type View = { kind: "library"; id: string } | { kind: "playlist"; id: string } | { kind: "trash" } | { kind: "covers" } | { kind: "status" }
 
 function libraryView(shelves: Shelf[], current?: View): View {
-  if (current?.kind === "playlist" || current?.kind === "trash") return current
+  if (current?.kind === "playlist" || current?.kind === "trash" || current?.kind === "covers" || current?.kind === "status") return current
   if (current?.kind === "library" && shelves.some((shelf) => shelf.id === current.id)) return current
   return { kind: "library", id: shelves[0]?.id ?? "" }
 }

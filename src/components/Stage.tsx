@@ -1,10 +1,10 @@
-import { X } from "lucide-react"
+import { Pause, Play, RotateCcw, RotateCw, SkipBack, SkipForward, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { Cover } from "@/components/Cover"
 import { quietBands, StageCanvas } from "@/components/Visualizer"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
-import { artistLabel } from "@/lib/format"
+import { artistLabel, formatClock } from "@/lib/format"
 import { activeLine, parseLyrics, plainFromLrc, shiftLrc, stampLine } from "@/lib/lyrics"
 import { message } from "@/lib/utils"
 import { useLibrary } from "@/stores/library"
@@ -39,16 +39,17 @@ export function Stage() {
 
   return (
     <div className={open ? "visible fixed inset-0 z-40 opacity-100" : "pointer-events-none invisible fixed inset-0 z-40 opacity-0"} aria-hidden={!open}>
-      <div className="flex h-full flex-col bg-black/25">
-        <div className="flex flex-wrap items-center justify-end gap-2 p-3 sm:p-4">
+      <div className="relative flex h-full flex-col bg-transparent">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_42%,rgba(0,0,0,0.62)_100%)]" />
+        <div className="relative z-10 flex shrink-0 flex-wrap items-center justify-end gap-2 p-3 sm:p-4">
           <LayoutButton on={layout.lyrics} label="Lyrics" onClick={toggleLyrics} />
           <button type="button" className="flex size-11 cursor-pointer items-center justify-center rounded-md border border-[#3a3a3a] bg-[#1c1c1c] text-white" onClick={() => close(false)} aria-label="Close stage">
             <X className="size-6" />
           </button>
         </div>
-        <div className={`grid min-h-0 flex-1 gap-4 overflow-auto px-4 pb-24 sm:gap-6 sm:px-6 sm:pb-28 ${layout.lyrics ? "lg:grid-cols-2" : "grid-cols-1"}`}>
+        <div className={`relative z-10 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 pb-16 sm:px-6 sm:pb-20 lg:overflow-hidden ${layout.lyrics ? "lg:grid lg:grid-cols-[auto_minmax(0,1fr)] lg:items-center lg:gap-8" : "items-center justify-center"}`}>
           <ArtworkPanel live={open} />
-          {layout.lyrics ? <LyricsPanel solo={false} /> : null}
+          {layout.lyrics ? <LyricsPanel /> : null}
         </div>
       </div>
     </div>
@@ -59,7 +60,7 @@ function LayoutButton({ on, label, onClick }: { on: boolean; label: string; onCl
   return (
     <button
       type="button"
-      className={`h-10 cursor-pointer rounded-md border px-3 text-sm ${on ? "border-white bg-white text-black" : "border-[#3a3a3a] bg-[#1c1c1c] text-white"}`}
+      className={`h-10 cursor-pointer rounded-md border bg-[#101010] px-3 text-sm text-white ${on ? "border-white/70" : "border-[#3a3a3a]"}`}
       onClick={onClick}
       aria-pressed={on}
     >
@@ -74,34 +75,83 @@ function ArtworkPanel({ live }: { live: boolean }) {
   const artist = usePlayer((state) => state.artist)
   const bands = usePlayer((state) => (live ? state.bands : quietBands))
   const shown = bands.length ? bands : quietBands
-  const energy = shown.reduce((sum, band) => sum + band, 0) / shown.length
   return (
-    <div className="flex min-h-0 flex-col items-center justify-center py-2">
-      <div className="relative size-[min(78vw,48vh,34rem)] sm:size-[min(68vh,36rem)]">
+    <div className="flex shrink-0 flex-col items-center">
+      <div className="relative size-[min(22rem,78vw)] shrink-0 sm:size-112 lg:size-128">
         <StageCanvas bands={shown} />
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="size-[46%]" style={{ transform: `scale(${(1 + energy * 0.08).toFixed(3)})` }}>
-            <Cover path={coverPath} className="size-full rounded-full shadow-2xl ring-2 ring-white" />
-          </div>
+          <Cover path={coverPath} className="size-[42%] rounded-full shadow-2xl ring-2 ring-white" />
         </div>
       </div>
-      <div className="mt-8 w-full max-w-3xl px-2 text-center sm:mt-10">
-        <h2 className="serif text-3xl leading-tight tracking-tight sm:text-5xl sm:leading-[1.08]">{title || "The stage is quiet"}</h2>
-        <p className="mt-3 text-base text-white/75 sm:mt-4 sm:text-xl">{artistLabel(artist)}</p>
+      <div className="mt-4 w-full max-w-md px-2 text-center">
+        <h2 className="serif text-2xl leading-tight text-balance text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.85)] sm:text-4xl">{title || "The stage is quiet"}</h2>
+        <p className="mt-2 text-base font-medium text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)] sm:text-lg">{artistLabel(artist)}</p>
+      </div>
+      <StageTransport />
+    </div>
+  )
+}
+
+function StageTransport() {
+  const trackId = usePlayer((state) => state.trackId)
+  const playing = usePlayer((state) => state.playing)
+  const position = usePlayer((state) => state.position)
+  const duration = usePlayer((state) => state.duration)
+  const toggle = usePlayer((state) => state.toggle)
+  const previous = usePlayer((state) => state.previous)
+  const next = usePlayer((state) => state.next)
+  const seek = usePlayer((state) => state.seek)
+  const [scrub, setScrub] = useState<number | null>(null)
+  const shown = scrub ?? (duration ? position / duration : 0)
+  const disabled = !trackId
+
+  return (
+    <div className="mt-4 mb-8 w-full max-w-md rounded-2xl border border-white/10 bg-[#0c0c0c] p-3">
+      <div className="flex items-center justify-center gap-2">
+        <Button variant="ghost" size="icon" className="bg-[#161616] text-white hover:bg-[#222]" onClick={() => void previous()} disabled={disabled} aria-label="Previous">
+          <SkipBack className="size-5" />
+        </Button>
+        <Button variant="ghost" size="icon" className="bg-[#161616] text-white hover:bg-[#222]" onClick={() => void seek(Math.max(0, position - 5))} disabled={disabled} aria-label="Back 5 seconds">
+          <RotateCcw className="size-5" />
+        </Button>
+        <Button size="icon" className="size-12 bg-[#161616] text-white hover:bg-[#222]" onClick={() => void toggle()} disabled={disabled} aria-label={playing ? "Pause" : "Play"}>
+          {playing ? <Pause className="size-6" /> : <Play className="size-6" />}
+        </Button>
+        <Button variant="ghost" size="icon" className="bg-[#161616] text-white hover:bg-[#222]" onClick={() => void seek(position + 5)} disabled={disabled} aria-label="Forward 5 seconds">
+          <RotateCw className="size-5" />
+        </Button>
+        <Button variant="ghost" size="icon" className="bg-[#161616] text-white hover:bg-[#222]" onClick={() => void next()} disabled={disabled} aria-label="Next">
+          <SkipForward className="size-5" />
+        </Button>
+      </div>
+      <div className="mt-2 flex items-center gap-2 text-sm text-white">
+        <span className="w-12 tabular-nums drop-shadow-[0_1px_6px_rgba(0,0,0,0.8)]">{formatClock(scrub == null ? position : scrub * duration)}</span>
+        <Slider
+          max={1000}
+          value={[Math.round(shown * 1000)]}
+          disabled={disabled || !duration}
+          aria-label="Position"
+          onValueChange={([value]) => setScrub((value ?? 0) / 1000)}
+          onValueCommit={([value]) => {
+            setScrub(null)
+            void seek(((value ?? 0) / 1000) * duration)
+          }}
+        />
+        <span className="w-12 text-right tabular-nums drop-shadow-[0_1px_6px_rgba(0,0,0,0.8)]">{formatClock(duration)}</span>
       </div>
     </div>
   )
 }
 
-function LyricsPanel({ solo }: { solo: boolean }) {
+function LyricsPanel() {
   const title = usePlayer((state) => state.title)
   const artist = usePlayer((state) => state.artist)
   const trackId = usePlayer((state) => state.trackId)
   return (
-    <div className={`glass-strong flex min-h-0 flex-col overflow-hidden rounded-3xl p-6 md:p-8 ${solo ? "mx-auto h-full w-full max-w-3xl" : "h-full"}`}>
+    <div className="glass-strong flex min-h-72 w-full flex-1 flex-col overflow-hidden rounded-3xl p-4 sm:p-6 md:p-8 lg:h-full lg:max-h-full lg:min-h-0">
       <p className="text-xs tracking-[0.28em] text-gold uppercase">Orfeus</p>
-      <h2 className="serif mt-4 text-3xl leading-tight sm:text-5xl">{title || "The stage is quiet"}</h2>
-      <p className="mt-3 text-base text-muted-foreground sm:text-lg">{trackId ? artistLabel(artist) : "Pick a track to open the stage."}</p>
+      <h2 className="serif mt-4 hidden text-3xl leading-tight sm:text-5xl lg:block">{title || "The stage is quiet"}</h2>
+      <p className="mt-3 hidden text-base text-muted-foreground sm:text-lg lg:block">{trackId ? artistLabel(artist) : "Pick a track to open the stage."}</p>
       {trackId ? <LyricStage trackId={trackId} /> : null}
     </div>
   )
@@ -200,8 +250,8 @@ function LyricStage({ trackId }: { trackId: string }) {
   return (
     <div className="mt-4 flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant={synced ? "secondary" : "outline"} size="sm" className="bg-[#1c1c1c] text-white hover:bg-[#2a2a2a]" onClick={() => setSynced(false)}>Reading</Button>
-        <Button variant={synced ? "default" : "outline"} size="sm" className={synced ? undefined : "bg-[#1c1c1c] text-white hover:bg-[#2a2a2a]"} onClick={() => setSynced(true)}>Synced</Button>
+        <Button variant="outline" size="sm" className={`bg-[#101010] text-white hover:bg-[#1c1c1c] ${synced ? "border-[#3a3a3a]" : "border-white/70"}`} onClick={() => setSynced(false)}>Reading</Button>
+        <Button variant="outline" size="sm" className={`bg-[#101010] text-white hover:bg-[#1c1c1c] ${synced ? "border-white/70" : "border-[#3a3a3a]"}`} onClick={() => setSynced(true)}>Synced</Button>
         <Button size="sm" className="bg-[#1c1c1c] text-white hover:bg-[#2a2a2a]" onClick={() => void fetchSynced()}>Find synced lyrics</Button>
       </div>
       {synced ? (
@@ -230,7 +280,7 @@ function LyricStage({ trackId }: { trackId: string }) {
               key={`${line.text}-${index}`}
               ref={active ? activeRef : undefined}
               type="button"
-              className={`block w-full cursor-pointer rounded-xl px-3 py-2 text-left transition ${active ? "bg-white/15 text-4xl leading-tight font-semibold text-white md:text-5xl" : "text-2xl leading-snug text-white/55 hover:text-white/80"}`}
+              className={`block w-full cursor-pointer rounded-xl px-3 py-2 text-left transition ${active ? "bg-[#161616] text-4xl leading-tight font-semibold text-white md:text-5xl" : "text-2xl leading-snug text-white/55 hover:bg-[#101010] hover:text-white/80"}`}
               onClick={() => {
                 if (synced) void mark(index)
               }}

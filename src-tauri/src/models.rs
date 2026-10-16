@@ -2,6 +2,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct OpticalDrive {
+    pub device: String,
+    pub label: String,
+    pub size: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TrackDto {
     pub id: String,
     pub path: String,
@@ -158,6 +166,49 @@ pub struct ShelfDto {
     pub id: String,
     pub name: String,
     pub kind: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoverHolder {
+    pub kind: String,
+    pub id: String,
+    pub title: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoverDto {
+    pub path: String,
+    pub uses: u32,
+    pub label: String,
+    pub holders: Vec<CoverHolder>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordListen {
+    pub track_id: String,
+    pub title: String,
+    pub artist: String,
+    #[serde(default)]
+    pub cover_path: Option<String>,
+    pub seconds: f64,
+    #[serde(default)]
+    pub play_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListenDto {
+    pub id: i64,
+    pub track_id: String,
+    pub title: String,
+    pub artist: String,
+    pub cover_path: Option<String>,
+    pub played_at: i64,
+    pub seconds: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]

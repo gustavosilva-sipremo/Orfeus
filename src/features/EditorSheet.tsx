@@ -1,13 +1,17 @@
 import { open } from "@tauri-apps/plugin-dialog"
-import { useEffect, useRef, useState } from "react"
+import { Search } from "lucide-react"
+import { useEffect, useRef, useState, type DragEvent } from "react"
 import { Cover } from "@/components/Cover"
+import { CubeLoader } from "@/components/kit/CubeLoader"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Slider } from "@/components/ui/slider"
 import { Textarea } from "@/components/ui/textarea"
+import { CoverPicker } from "@/features/CoverPicker"
 import * as api from "@/lib/api"
+import { imageFileFromList, imageFromClipboard, stageImageFile, watchCoverDrop } from "@/lib/covers"
 import type { FieldLookup, SearchHit } from "@/lib/types"
 import { sourceKind } from "@/lib/format"
 import { message } from "@/lib/utils"
@@ -34,6 +38,8 @@ export function EditorSheet() {
   const [searching, setSearching] = useState(false)
   const [cooldown, setCooldown] = useState(0)
   const [localError, setLocalError] = useState<string | null>(null)
+  const [coverDropping, setCoverDropping] = useState(false)
+  const [savedOpen, setSavedOpen] = useState(false)
   const playingId = usePlayer((state) => state.trackId)
   const loadedId = useRef<string | null>(null)
 
@@ -58,6 +64,51 @@ export function EditorSheet() {
   }, [editingId, track])
 
   const preview = clearCover ? null : coverSource ?? track?.coverPath ?? null
+
+  useEffect(() => {
+    if (!editingId) return
+    return watchCoverDrop((path) => {
+      setCoverSource(path)
+      setClearCover(false)
+      setLocalError(null)
+    })
+  }, [editingId])
+
+  useEffect(() => {
+    if (!editingId) return
+    const onPaste = (event: ClipboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return
+      const file = imageFromClipboard(event.clipboardData)
+      if (!file) return
+      event.preventDefault()
+      void useImage(file)
+    }
+    window.addEventListener("paste", onPaste)
+    return () => window.removeEventListener("paste", onPaste)
+  }, [editingId])
+
+  async function useImage(file: File) {
+    try {
+      const path = await stageImageFile(file)
+      setCoverSource(path)
+      setClearCover(false)
+      setLocalError(null)
+    } catch (error) {
+      setLocalError(message(error))
+    }
+  }
+
+  function dropImage(event: DragEvent<HTMLElement>) {
+    event.preventDefault()
+    setCoverDropping(false)
+    const file = imageFileFromList(event.dataTransfer.files)
+    if (!file) {
+      setLocalError("Drop an image.")
+      return
+    }
+    void useImage(file)
+  }
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -149,17 +200,35 @@ export function EditorSheet() {
         </p>
         {!track ? <p className="mt-6 text-base text-muted-foreground">This track is no longer in the library.</p> : null}
         <div className="mt-5 flex min-h-0 flex-1 flex-col gap-5 overflow-auto pr-1">
-          <section className="glass space-y-3 rounded-2xl p-4">
+          <section
+            className={`glass space-y-3 rounded-2xl p-4 ${coverDropping ? "ring-2 ring-white" : ""}`}
+            onDragEnter={(event) => {
+              event.preventDefault()
+              setCoverDropping(true)
+            }}
+            onDragOver={(event) => event.preventDefault()}
+            onDragLeave={() => setCoverDropping(false)}
+            onDrop={dropImage}
+          >
             <h3 className="text-sm tracking-[0.16em] text-gold uppercase">Artwork</h3>
             <div className="flex items-end gap-3">
               <Cover path={preview} className="size-24 rounded-lg" />
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => void chooseCover()}>Cover</Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={() => void chooseCover()}>File</Button>
+                <Button variant="outline" size="sm" onClick={() => setSavedOpen(true)}>Saved</Button>
                 <Button variant="ghost" size="sm" onClick={() => { setClearCover(true); setCoverSource(null) }}>Remove</Button>
               </div>
             </div>
-            <p className="text-sm text-muted-foreground">Recommended: a square image, 1400×1400 or larger.</p>
+            <p className="text-sm text-muted-foreground">Paste a copied image, drop one here, or reuse a cover from the gallery. A square picture, 1400×1400 or larger, works best.</p>
           </section>
+          <CoverPicker
+            open={savedOpen}
+            onOpenChange={setSavedOpen}
+            onPick={(path) => {
+              setCoverSource(path)
+              setClearCover(false)
+            }}
+          />
           <section className="glass space-y-3 rounded-2xl p-4">
             <h3 className="text-sm tracking-[0.16em] text-gold uppercase">Details</h3>
             <Field id="title" label="Title" value={title} onChange={setTitle} />
@@ -181,6 +250,7 @@ export function EditorSheet() {
           <section className="glass space-y-3 rounded-2xl p-4">
             <h3 className="text-sm tracking-[0.16em] text-gold uppercase">Lyrics and sync</h3>
             <Button variant="secondary" onClick={() => void search()} disabled={searching || cooldown > 0}>
+              {searching ? <CubeLoader size={22} label="Searching" /> : <Search className="size-4" />}
               {searching ? "Searching…" : cooldown > 0 ? `Wait ${cooldown}s` : "Search cover, lyrics, and sync"}
             </Button>
             <p className="text-sm text-muted-foreground">MusicBrainz supplies the recording, Cover Art Archive or iTunes the image, and LRCLIB the lyrics. The wait avoids too many requests.</p>
@@ -215,11 +285,11 @@ export function EditorSheet() {
             ) : null}
             <div className="space-y-1.5">
               <Label htmlFor="lyrics">Lyrics</Label>
-              <Textarea id="lyrics" value={lyrics} onChange={(event) => setLyrics(event.target.value)} className="min-h-24" />
+              <Textarea id="lyrics" value={lyrics} onChange={(event) => setLyrics(event.target.value)} maxLength={20000} className="min-h-24" />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="synced">Timed lyrics</Label>
-              <Textarea id="synced" value={syncedLyrics} onChange={(event) => setSyncedLyrics(event.target.value)} className="min-h-24 font-mono text-sm" placeholder={"[00:12.00] first line"} />
+              <Textarea id="synced" value={syncedLyrics} onChange={(event) => setSyncedLyrics(event.target.value)} maxLength={20000} className="min-h-24 font-mono text-sm" placeholder={"[00:12.00] first line"} />
               <p className="text-sm text-muted-foreground">Search fills this when LRCLIB has timestamps. You can also paste LRC or stamp lines on the stage.</p>
             </div>
           </section>
@@ -240,7 +310,7 @@ function Field({ id, label, value, onChange }: { id: string; label: string; valu
   return (
     <div className="space-y-1.5">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} value={value} onChange={(event) => onChange(event.target.value)} />
+      <Input id={id} value={value} maxLength={180} onChange={(event) => onChange(event.target.value)} />
     </div>
   )
 }

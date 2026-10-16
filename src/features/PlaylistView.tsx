@@ -1,12 +1,16 @@
 import { open, save } from "@tauri-apps/plugin-dialog"
-import { ArrowDown, ArrowUp, Package, Play, Trash2 } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { ArrowDown, ArrowUp, Disc, Package, Play, Trash2 } from "lucide-react"
+import { useEffect, useMemo, useState, type DragEvent } from "react"
 import { Cover } from "@/components/Cover"
 import { Button } from "@/components/ui/button"
+import { BrowseSkeleton } from "@/components/ui/skeleton"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { BurnDialog } from "@/features/BurnDialog"
+import { CoverPicker } from "@/features/CoverPicker"
 import { TrackBrowse } from "@/features/TrackBrowse"
 import * as api from "@/lib/api"
+import { imageFileFromList, imageFromClipboard, isImagePath, stageImageFile, watchCoverDrop } from "@/lib/covers"
 import { artistLabel, formatDuration, loopLabel, nextLoop, sourceLabel, tally } from "@/lib/format"
 import type { Track } from "@/lib/types"
 import { message } from "@/lib/utils"
@@ -14,6 +18,7 @@ import { useLibrary } from "@/stores/library"
 import { usePlayer } from "@/stores/player"
 
 export function PlaylistView({ id }: { id: string }) {
+  const ready = useLibrary((state) => state.ready)
   const playlist = useLibrary((state) => state.playlists.find((item) => item.id === id))
   const tracks = useLibrary((state) => state.tracks)
   const savePlaylist = useLibrary((state) => state.savePlaylist)
@@ -30,6 +35,9 @@ export function PlaylistView({ id }: { id: string }) {
     setName(playlist?.name ?? "")
   }, [playlist?.id, playlist?.name])
   const [picked, setPicked] = useState<string[]>([])
+  const [savedOpen, setSavedOpen] = useState(false)
+  const [coverDropping, setCoverDropping] = useState(false)
+  const [burnOpen, setBurnOpen] = useState(false)
 
   const ordered = useMemo(() => {
     if (!playlist) return []
@@ -38,12 +46,57 @@ export function PlaylistView({ id }: { id: string }) {
       .filter((track): track is Track => track != null)
   }, [playlist, tracks])
 
+  useEffect(() => {
+    return watchCoverDrop((path) => {
+      if (!isImagePath(path) || useLibrary.getState().editingId) return
+      void savePlaylist({ id, coverSource: path }).catch(showError)
+    })
+  }, [id, savePlaylist])
+
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      if (useLibrary.getState().editingId) return
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return
+      const file = imageFromClipboard(event.clipboardData)
+      if (!file) return
+      event.preventDefault()
+      void stageImageFile(file)
+        .then((path) => savePlaylist({ id, coverSource: path }))
+        .catch(showError)
+    }
+    window.addEventListener("paste", onPaste)
+    return () => window.removeEventListener("paste", onPaste)
+  }, [id])
+
+  if (!ready) {
+    return (
+      <section className="flex h-full min-h-0 flex-col pt-4">
+        <BrowseSkeleton />
+      </section>
+    )
+  }
+
   if (!playlist) {
     return <p className="p-6 text-muted-foreground">That playlist is no longer here.</p>
   }
 
   const shownName = name
   const current = playlist
+
+  async function applyCoverFile(file: File) {
+    const path = await stageImageFile(file)
+    await savePlaylist({ id, coverSource: path })
+  }
+
+  function dropCover(event: DragEvent<HTMLElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+    setCoverDropping(false)
+    const file = imageFileFromList(event.dataTransfer.files)
+    if (!file) return
+    void applyCoverFile(file).catch(showError)
+  }
 
   async function changeCover() {
     if (!api.desktop()) {
@@ -75,9 +128,22 @@ export function PlaylistView({ id }: { id: string }) {
   return (
     <section className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-end gap-3 px-4 py-4 sm:gap-4 sm:px-6 sm:py-5">
-        <button type="button" onClick={() => void changeCover().catch(showError)} className="shrink-0">
-          <Cover path={playlist.coverPath} className="size-28 rounded-xl" />
-        </button>
+        <div
+          className={`shrink-0 rounded-xl ${coverDropping ? "ring-2 ring-white" : ""}`}
+          onDragEnter={(event) => {
+            event.preventDefault()
+            setCoverDropping(true)
+          }}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={() => setCoverDropping(false)}
+          onDrop={(event) => void dropCover(event)}
+        >
+          <button type="button" onClick={() => void changeCover().catch(showError)} className="cursor-pointer">
+            <Cover path={playlist.coverPath} className="size-28 rounded-xl" />
+          </button>
+          <Button variant="ghost" size="sm" className="mt-2 w-full" onClick={() => setSavedOpen(true)}>Saved</Button>
+        </div>
+        <CoverPicker open={savedOpen} onOpenChange={setSavedOpen} onPick={(path) => void savePlaylist({ id, coverSource: path }).catch(showError)} />
         <div className="min-w-0 flex-1">
           <p className="text-xs tracking-[0.22em] text-gold uppercase">Playlist</p>
           <Input
@@ -88,6 +154,7 @@ export function PlaylistView({ id }: { id: string }) {
               if (next && next !== playlist.name) void savePlaylist({ id: playlist.id, name: next }).catch(showError)
             }}
             className="serif mt-1 h-auto border-transparent bg-transparent px-0 text-4xl focus-visible:ring-0"
+            maxLength={80}
           />
           <p className="text-base text-muted-foreground">{ordered.length} tracks · {tally(ordered)}</p>
         </div>
@@ -104,16 +171,25 @@ export function PlaylistView({ id }: { id: string }) {
             <Package className="size-5" />
             Package
           </Button>
+          <Button variant="outline" disabled={!ordered.length} onClick={() => setBurnOpen(true)}>
+            <Disc className="size-5" />
+            Burn
+          </Button>
           <Button variant="ghost" onClick={() => void deletePlaylist(playlist.id).catch(showError)} aria-label="Delete playlist">
             <Trash2 className="size-5" />
           </Button>
         </div>
       </header>
+      <BurnDialog open={burnOpen} trackIds={ordered.map((track) => track.id)} onOpenChange={setBurnOpen} />
       <TrackBrowse
         tracks={ordered}
         currentId={currentId}
         manualSort
+        listingKey="playlist"
         onOpen={(visible, index) => void playTracks(visible, index, playlist.loopMode, playlist.id)}
+        contextActions={(track) => [
+          { label: "Remove from playlist", icon: <Trash2 className="size-4" />, onSelect: () => void removeFromPlaylist(playlist.id, track.id) },
+        ]}
         empty={
           <div>
             <h3 className="serif text-3xl">This playlist has no tracks yet</h3>
@@ -194,7 +270,7 @@ function TrackPicker({
 
   return (
     <>
-      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search title, artist, or album" aria-label="Filter tracks" />
+      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search title, artist, or album" aria-label="Filter tracks" maxLength={80} />
       <div className="min-h-0 flex-1 overflow-auto">
         {visible.length === 0 ? (
           <p className="px-2 py-6 text-sm text-muted-foreground">{tracks.length === 0 ? "The library is empty." : "No tracks match that search."}</p>

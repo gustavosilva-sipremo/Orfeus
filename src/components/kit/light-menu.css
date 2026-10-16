@@ -1,0 +1,50 @@
+.light-menu {
+  --menu-accent: var(--gold);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  padding-left: 0.5rem;
+}
+
+.light-menu-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: linear-gradient(0deg, transparent 0%, #1b1b1b 50%, transparent 100%);
+}
+
+.light-menu-glider {
+  position: relative;
+  height: calc(100% / var(--count));
+  width: 100%;
+  background: linear-gradient(0deg, transparent 0%, var(--menu-accent) 50%, transparent 100%);
+  transition: transform 0.5s cubic-bezier(0.37, 1.95, 0.66, 0.56);
+}
+
+.light-menu-glider::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 300%;
+  height: 60%;
+  transform: translateY(-50%);
+  background: var(--menu-accent);
+  filter: blur(10px);
+}
+
+.light-menu-glider::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 9.5rem;
+  height: 100%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--menu-accent) 14%, transparent) 0%, transparent 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .light-menu-glider {
+    transition: none;
+  }
+}

@@ -91,6 +91,26 @@ export type YoutubeDone = { audioPath: string; videoPath: string | null; title: 
 export type ExportReport = { exported: number; errors: string[]; destDir: string }
 export type ExportProgress = { done: number; total: number; current: string }
 export type WatchedFolder = { path: string; recursive: boolean; shelfId: string }
+export type CoverHolder = {
+  kind: "track" | "playlist" | string
+  id: string
+  title: string
+  detail: string
+}
+
+export type SavedCover = { path: string; uses: number; label: string; holders: CoverHolder[] }
+
+export type OpticalDrive = { device: string; label: string; size: string }
+
+export type Listen = {
+  id: number
+  trackId: string
+  title: string
+  artist: string
+  coverPath: string | null
+  playedAt: number
+  seconds: number
+}
 export type ImportProgress = { done: number; total: number; current: string }
 
 export function toQueue(track: Track): QueueTrack {

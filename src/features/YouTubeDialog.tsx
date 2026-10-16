@@ -1,7 +1,8 @@
 import { listen } from "@tauri-apps/api/event"
 import { open as chooseDirectory } from "@tauri-apps/plugin-dialog"
-import { FolderOpen } from "lucide-react"
+import { FolderOpen, Search, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
+import { CubeLoader } from "@/components/kit/CubeLoader"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -202,15 +203,24 @@ export function YouTubeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                 if (!running) void lookUp()
               }}
             >
-              <Input
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                placeholder="Paste a video or playlist link"
-                disabled={running}
-                aria-label="YouTube link"
-                className="border-[#3a3a3a] bg-[#1c1c1c] shadow-none ring-0 outline-none focus-visible:border-white focus-visible:ring-0"
-              />
+              <div className="relative min-w-0 flex-1">
+                <Input
+                  value={url}
+                  onChange={(event) => setUrl(event.target.value)}
+                  placeholder="Paste a video or playlist link"
+                  disabled={running}
+                  maxLength={400}
+                  aria-label="YouTube link"
+                  className="border-[#3a3a3a] bg-[#1c1c1c] pr-11 shadow-none ring-0 outline-none focus-visible:border-white focus-visible:ring-0"
+                />
+                {url && !running ? (
+                  <Button type="button" variant="ghost" size="icon" className="absolute top-0 right-0" aria-label="Clear link" onClick={() => setUrl("")}>
+                    <X className="size-4" />
+                  </Button>
+                ) : null}
+              </div>
               <Button type="submit" variant="outline" disabled={running || !url.trim()}>
+                {busy === "lookup" ? <CubeLoader size={22} label="Looking up" /> : <Search className="size-4" />}
                 {busy === "lookup" ? "Looking up…" : "Look up"}
               </Button>
             </form>
@@ -336,6 +346,7 @@ export function YouTubeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
               disabled={running || !url.trim() || !audioDir || (keep && (!sameVideo || resolution == null)) || (playlist && !rows.some((row) => row.included))}
               onClick={() => void download()}
             >
+              {busy === "download" ? <CubeLoader size={22} label="Downloading" /> : null}
               {busy === "download" ? "Working…" : "Download"}
             </Button>
           </div>

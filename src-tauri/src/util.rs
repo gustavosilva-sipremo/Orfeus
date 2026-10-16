@@ -82,14 +82,14 @@ pub fn safe_zip_name(name: &str) -> bool {
 }
 
 pub fn remove_inside(root: &Path, target: &str) {
-    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    let path = Path::new(target);
-    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    if canonical.starts_with(&root) || path.starts_with(&root) {
+    let Ok(root) = root.canonicalize() else {
+        return;
+    };
+    let Ok(canonical) = Path::new(target).canonicalize() else {
+        return;
+    };
+    if canonical.starts_with(&root) {
         let _ = std::fs::remove_file(&canonical);
-        if canonical != path {
-            let _ = std::fs::remove_file(path);
-        }
     }
 }
 

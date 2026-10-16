@@ -1,18 +1,23 @@
 import { listen } from "@tauri-apps/api/event"
 import { getCurrentWindow } from "@tauri-apps/api/window"
-import { useEffect, useState } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
+import { CubeLoader } from "@/components/kit/CubeLoader"
 import { PlayerBar } from "@/components/PlayerBar"
 import { Stage } from "@/components/Stage"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { EditorSheet } from "@/features/EditorSheet"
 import { LibraryView } from "@/features/LibraryView"
 import { PlaylistView } from "@/features/PlaylistView"
 import { TrashView } from "@/features/TrashView"
+import { isImagePath, offerCoverDrop } from "@/lib/covers"
 import { Sidebar } from "@/features/Sidebar"
 import * as api from "@/lib/api"
 import { message as errorText } from "@/lib/utils"
 import { useLibrary } from "@/stores/library"
 import { usePlayer } from "@/stores/player"
+
+const CoverGallery = lazy(() => import("@/features/CoverGallery").then((mod) => ({ default: mod.CoverGallery })))
+const StatusView = lazy(() => import("@/features/StatusView").then((mod) => ({ default: mod.StatusView })))
+const EditorSheet = lazy(() => import("@/features/EditorSheet").then((mod) => ({ default: mod.EditorSheet })))
 
 export function App() {
   const initLibrary = useLibrary((state) => state.init)
@@ -25,6 +30,8 @@ export function App() {
   const lastExportDir = useLibrary((state) => state.lastExportDir)
   const dismiss = useLibrary((state) => state.dismiss)
   const playerError = usePlayer((state) => state.error)
+  const libraryReady = useLibrary((state) => state.ready)
+  const playerReady = usePlayer((state) => state.ready)
   const [dropping, setDropping] = useState(false)
   const [nav, setNav] = useState(false)
 
@@ -35,11 +42,43 @@ export function App() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.code !== "Space") return
-      const tag = (event.target as HTMLElement | null)?.tagName
-      if (tag === "INPUT" || tag === "TEXTAREA") return
-      event.preventDefault()
-      void usePlayer.getState().toggle()
+      const target = event.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON" || target?.isContentEditable) return
+      const player = usePlayer.getState()
+      if (event.code === "Space" || event.code === "MediaPlayPause") {
+        event.preventDefault()
+        void player.toggle()
+        return
+      }
+      if (event.altKey && (event.key === "ArrowLeft" || event.code === "MediaTrackPrevious")) {
+        event.preventDefault()
+        void player.previous()
+        return
+      }
+      if (event.altKey && (event.key === "ArrowRight" || event.code === "MediaTrackNext")) {
+        event.preventDefault()
+        void player.next()
+        return
+      }
+      if (event.code === "MediaTrackPrevious") {
+        event.preventDefault()
+        void player.previous()
+        return
+      }
+      if (event.code === "MediaTrackNext") {
+        event.preventDefault()
+        void player.next()
+        return
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault()
+        void player.seek(Math.max(0, player.position - 5))
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault()
+        void player.seek(player.position + 5)
+      }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
@@ -55,7 +94,12 @@ export function App() {
         if (event.payload.type === "leave") setDropping(false)
         if (event.payload.type === "drop") {
           setDropping(false)
-          void useLibrary.getState().importPaths(event.payload.paths)
+          const images = event.payload.paths.filter((path) => isImagePath(path))
+          const audio = event.payload.paths.filter((path) => !isImagePath(path))
+          if (images[0] && !offerCoverDrop(images[0]) && audio.length === 0) {
+            useLibrary.setState({ notice: "Open a track or a playlist to use that image as a cover." })
+          }
+          if (audio.length) void useLibrary.getState().importPaths(audio)
         }
       })
       .then((stop) => {
@@ -104,7 +148,9 @@ export function App() {
       .catch(() => undefined)
     void listen<number>("library://refresh", (event) => {
       void useLibrary.getState().refresh()
-      useLibrary.setState({ notice: event.payload === 1 ? "1 new track showed up in a watched folder." : `${event.payload} new tracks showed up in a watched folder.` })
+      if (event.payload > 0) {
+        useLibrary.setState({ notice: event.payload === 1 ? "1 new track showed up in a watched folder." : `${event.payload} new tracks showed up in a watched folder.` })
+      }
     })
       .then((stop) => {
         if (disposed) stop()
@@ -120,6 +166,15 @@ export function App() {
 
   const message = error || playerError || notice
   const fraction = exportProgress && exportProgress.total > 0 ? Math.min(100, (exportProgress.done / exportProgress.total) * 100) : 0
+
+  if (!libraryReady || !playerReady) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-black text-foreground">
+        <CubeLoader size={72} label="Opening the library" />
+        <p className="text-base text-muted-foreground">Opening the library</p>
+      </div>
+    )
+  }
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -141,7 +196,9 @@ export function App() {
               <span className="serif text-xl italic">Orfeus</span>
             </div>
             <div className="min-h-0 flex-1">
-              {view.kind === "library" ? <LibraryView /> : view.kind === "trash" ? <TrashView /> : <PlaylistView id={view.id} />}
+              <Suspense fallback={null}>
+                {view.kind === "library" ? <LibraryView /> : view.kind === "trash" ? <TrashView /> : view.kind === "covers" ? <CoverGallery /> : view.kind === "status" ? <StatusView /> : <PlaylistView id={view.id} />}
+              </Suspense>
             </div>
           </main>
         </div>
@@ -169,11 +226,16 @@ export function App() {
             ) : null}
           </div>
         ) : busy ? (
-          <p className="border-t border-white/10 px-4 py-2 text-sm text-muted-foreground">{busy}</p>
+          <p className="flex items-center gap-3 border-t border-white/10 px-4 py-2 text-sm text-muted-foreground">
+            <CubeLoader size={22} label={busy} />
+            {busy}
+          </p>
         ) : null}
         <PlayerBar />
         <Stage />
-        <EditorSheet />
+        <Suspense fallback={null}>
+          <EditorSheet />
+        </Suspense>
         {dropping ? (
           <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-black/55">
             <p className="serif text-3xl">Drop the music</p>

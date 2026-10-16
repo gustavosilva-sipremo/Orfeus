@@ -278,6 +278,31 @@ fn emit_progress(app: &AppHandle, phase: &str, percent: f32, label: &str) {
     );
 }
 
+fn create_venv(root: &Path) -> Result<(), String> {
+    let launchers: &[&[&str]] = if cfg!(windows) {
+        &[&["py", "-3"], &["python"], &["python3"]]
+    } else {
+        &[&["python3"], &["python"]]
+    };
+    let mut saw_python = false;
+    for launcher in launchers {
+        let mut command = Command::new(launcher[0]);
+        if launcher.len() > 1 {
+            command.args(&launcher[1..]);
+        }
+        match command.args(["-m", "venv"]).arg(root).status() {
+            Ok(status) if status.success() => return Ok(()),
+            Ok(_) => saw_python = true,
+            Err(_) => {}
+        }
+    }
+    if saw_python {
+        Err("Could not create the Python environment.".into())
+    } else {
+        Err("Python 3 was not found. Install Python and try again.".into())
+    }
+}
+
 fn ensure_runtime(data_dir: &Path) -> Result<(PathBuf, PathBuf), String> {
     if Command::new("ffmpeg").arg("-version").output().is_err() {
         return Err("ffmpeg was not found. Install ffmpeg and try again.".into());
@@ -286,14 +311,7 @@ fn ensure_runtime(data_dir: &Path) -> Result<(PathBuf, PathBuf), String> {
     fs::create_dir_all(&root).map_err(|err| err.to_string())?;
     let python = venv_python(&root);
     if !python.is_file() {
-        let status = Command::new("python3")
-            .args(["-m", "venv"])
-            .arg(&root)
-            .status()
-            .map_err(|_| "Python 3 was not found. Install python and try again.".to_string())?;
-        if !status.success() {
-            return Err("Could not create the Python environment.".into());
-        }
+        create_venv(&root)?;
     }
     let requirements = include_str!("../../python/requirements.txt");
     let req_path = root.join("requirements.txt");

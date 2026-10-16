@@ -1,18 +1,21 @@
 import { open } from "@tauri-apps/plugin-dialog"
-import { FolderOpen, FolderSync, MoreHorizontal, Music, Upload, Youtube } from "lucide-react"
-import { useEffect, useState } from "react"
+import { Disc, Download, FolderOpen, FolderSync, ListPlus, MoreHorizontal, Music, Pencil, SlidersHorizontal, Trash2, Upload, Youtube } from "lucide-react"
+import { lazy, Suspense, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Slider } from "@/components/ui/slider"
+import { BrowseSkeleton } from "@/components/ui/skeleton"
+import { BurnDialog } from "@/features/BurnDialog"
 import { TrackBrowse } from "@/features/TrackBrowse"
-import { YouTubeDialog } from "@/features/YouTubeDialog"
 import * as api from "@/lib/api"
 import type { Track, WatchedFolder } from "@/lib/types"
 import { tally } from "@/lib/format"
 import { message } from "@/lib/utils"
 import { useLibrary } from "@/stores/library"
 import { usePlayer } from "@/stores/player"
+
+const YouTubeDialog = lazy(() => import("@/features/YouTubeDialog").then((mod) => ({ default: mod.YouTubeDialog })))
 
 const exportKey = "orfeus-export-dir"
 const playKey = "orfeus-play-mode"
@@ -44,6 +47,7 @@ export function LibraryView() {
   const [volumeTrack, setVolumeTrack] = useState<Track | null>(null)
   const [exportDir, setExportDir] = useState(() => localStorage.getItem(exportKey) ?? "")
   const [youtubeOpen, setYoutubeOpen] = useState(false)
+  const [burnOpen, setBurnOpen] = useState(false)
   const [playMode, setPlayMode] = useState<"one" | "sequence">(() => (localStorage.getItem(playKey) === "one" ? "one" : "sequence"))
 
   useEffect(() => {
@@ -157,8 +161,8 @@ export function LibraryView() {
           <p className="text-base text-muted-foreground">{ready ? `${tracks.length} tracks · ${tally(tracks)}` : "Opening the library…"}</p>
         </div>
         <div className="flex rounded-md border border-[#3a3a3a] bg-[#1c1c1c] p-1">
-          <button type="button" className={`cursor-pointer rounded px-3 py-1.5 text-sm ${playMode === "one" ? "bg-white text-black" : "text-white"}`} onClick={() => setMode("one")}>One track</button>
-          <button type="button" className={`cursor-pointer rounded px-3 py-1.5 text-sm ${playMode === "sequence" ? "bg-white text-black" : "text-white"}`} onClick={() => setMode("sequence")}>In order</button>
+          <button type="button" className={`h-9 cursor-pointer rounded px-3 text-base ${playMode === "one" ? "bg-white text-black" : "text-white"}`} onClick={() => setMode("one")}>One track</button>
+          <button type="button" className={`h-9 cursor-pointer rounded px-3 text-base ${playMode === "sequence" ? "bg-white text-black" : "text-white"}`} onClick={() => setMode("sequence")}>In order</button>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -178,14 +182,25 @@ export function LibraryView() {
               Folder
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => void chooseExportDir().catch(showError)}>
+              <FolderOpen className="size-4" />
               {exportDir ? "Change folder" : "Save location"}
             </DropdownMenuItem>
             <DropdownMenuItem disabled={!selected.length} onSelect={() => void exportSelection(selected).catch(showError)}>
+              <Download className="size-4" />
               Export
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!selected.length} onSelect={() => setBurnOpen(true)}>
+              <Disc className="size-4" />
+              Burn disc
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <YouTubeDialog open={youtubeOpen} onOpenChange={setYoutubeOpen} />
+        <BurnDialog open={burnOpen} trackIds={selected} onOpenChange={setBurnOpen} />
+        {youtubeOpen ? (
+          <Suspense fallback={null}>
+            <YouTubeDialog open={youtubeOpen} onOpenChange={setYoutubeOpen} />
+          </Suspense>
+        ) : null}
       </header>
       {exportDir ? (
         <div className="flex flex-wrap items-center gap-2 px-4 pb-2 text-sm text-muted-foreground sm:px-6">
@@ -204,7 +219,9 @@ export function LibraryView() {
           ))}
         </div>
       ) : null}
-      {tracks.length === 0 ? (
+      {!ready ? (
+        <BrowseSkeleton />
+      ) : tracks.length === 0 ? (
         <EmptyLibrary filtered={false} onFiles={() => void chooseFiles().catch(showError)} onFolder={() => void chooseFolder().catch(showError)} />
       ) : (
         <TrackBrowse
@@ -213,6 +230,13 @@ export function LibraryView() {
           onOpen={playVisible}
           selectedIds={selected}
           onSelectVisible={(ids, on) => setSelected((current) => (on ? [...new Set([...current, ...ids])] : current.filter((id) => !ids.includes(id))))}
+          contextActions={(track) => [
+            { label: "Edit", icon: <Pencil className="size-4" />, onSelect: () => setEditingId(track.id) },
+            { label: "Track volume", icon: <SlidersHorizontal className="size-4" />, onSelect: () => setVolumeTrack(track) },
+            { label: "Add to playlist", icon: <ListPlus className="size-4" />, onSelect: () => setAddId(track.id) },
+            { label: "Export", icon: <Download className="size-4" />, onSelect: () => void exportSelection([track.id]).catch(showError) },
+            { label: "Move to Trash", icon: <Trash2 className="size-4" />, onSelect: () => void deleteTrack(track.id).catch(showError) },
+          ]}
           actions={(track) => (
             <>
               <input
@@ -321,11 +345,11 @@ function TrackMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={onEdit}>Edit</DropdownMenuItem>
-        <DropdownMenuItem onSelect={onVolume}>Track volume</DropdownMenuItem>
-        <DropdownMenuItem onSelect={onAdd}>Add to playlist</DropdownMenuItem>
-        <DropdownMenuItem onSelect={onExport}>Export</DropdownMenuItem>
-        <DropdownMenuItem onSelect={onDelete}>Move to Trash</DropdownMenuItem>
+        <DropdownMenuItem onSelect={onEdit}><Pencil className="size-4" />Edit</DropdownMenuItem>
+        <DropdownMenuItem onSelect={onVolume}><SlidersHorizontal className="size-4" />Track volume</DropdownMenuItem>
+        <DropdownMenuItem onSelect={onAdd}><ListPlus className="size-4" />Add to playlist</DropdownMenuItem>
+        <DropdownMenuItem onSelect={onExport}><Download className="size-4" />Export</DropdownMenuItem>
+        <DropdownMenuItem onSelect={onDelete}><Trash2 className="size-4" />Move to Trash</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )

@@ -5,8 +5,11 @@ import type {
   YoutubeDefaults,
   YoutubeDone,
   YoutubeProbe,
+  Listen,
+  SavedCover,
   WatchedFolder,
   LoopMode,
+  OpticalDrive,
   PlaybackState,
   Playlist,
   QueueTrack,
@@ -95,6 +98,63 @@ export function purgeTrack(id: string) {
 
 export function ensureFolder(path: string) {
   return call<string>("ensure_folder", { path })
+}
+
+export function listCovers() {
+  return call<SavedCover[]>("list_covers")
+}
+
+export function deleteCover(path: string) {
+  return call<void>("delete_cover", { path })
+}
+
+const previewListensKey = "orfeus-preview-listens"
+
+function readPreviewListens(): Listen[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(previewListensKey) ?? "[]") as Listen[]
+    return Array.isArray(raw) ? raw : []
+  } catch {
+    return []
+  }
+}
+
+export function recordListen(input: { trackId: string; title: string; artist: string; coverPath: string | null; seconds: number; playId: number | null }) {
+  if (!desktop()) {
+    const rows = readPreviewListens()
+    if (input.playId != null) {
+      const row = rows.find((item) => item.id === input.playId && item.trackId === input.trackId)
+      if (row) {
+        row.seconds += Math.round(input.seconds)
+        localStorage.setItem(previewListensKey, JSON.stringify(rows))
+        return Promise.resolve(row.id)
+      }
+    }
+    const id = Date.now()
+    rows.unshift({
+      id,
+      trackId: input.trackId,
+      title: input.title,
+      artist: input.artist,
+      coverPath: input.coverPath,
+      playedAt: Math.floor(Date.now() / 1000),
+      seconds: Math.round(input.seconds),
+    })
+    localStorage.setItem(previewListensKey, JSON.stringify(rows))
+    return Promise.resolve(id)
+  }
+  return call<number>("record_listen", { input })
+}
+
+export function listListens(from: number, to: number) {
+  if (!desktop()) {
+    return Promise.resolve(readPreviewListens().filter((item) => item.playedAt >= from && item.playedAt < to))
+  }
+  return call<Listen[]>("list_listens", { from, to })
+}
+
+export function stageCover(bytes: Uint8Array) {
+  return call<string>("stage_cover", { bytes: Array.from(bytes) })
 }
 
 export function createPlaylist(name: string) {
@@ -226,6 +286,14 @@ export function next() {
 
 export function previous() {
   return call<void>("previous")
+}
+
+export function listDrives() {
+  return call<OpticalDrive[]>("list_drives")
+}
+
+export function burnDisc(kind: "audio" | "data", device: string, trackIds: string[]) {
+  return call<void>("burn_disc", { kind, device, trackIds })
 }
 
 export function playbackState() {

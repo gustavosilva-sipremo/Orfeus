@@ -22,6 +22,12 @@ export function formatBytes(bytes: number) {
   return "0.1 MB"
 }
 
+export function formatListened(seconds: number) {
+  const total = Math.max(0, Math.round(seconds))
+  if (total < 60) return `${total} s`
+  return formatMinutes(total * 1000)
+}
+
 export function formatMinutes(ms: number) {
   const minutes = Math.max(0, Math.round(ms / 60_000))
   if (minutes < 60) return `${minutes} min`
@@ -70,6 +76,10 @@ export function nextLoop(mode: LoopMode): LoopMode {
   if (mode === "off") return "track"
   if (mode === "track") return "playlist"
   return "off"
+}
+
+export function isRecent(addedAt: number) {
+  return addedAt > 1_000_000_000 && Date.now() / 1000 - addedAt < 7 * 24 * 60 * 60
 }
 
 export function artistLabel(artist: string) {

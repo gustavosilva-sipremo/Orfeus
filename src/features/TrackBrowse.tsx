@@ -1,28 +1,34 @@
-import { LayoutGrid, List, Table2 } from "lucide-react"
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { LayoutGrid, List } from "lucide-react"
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type WheelEvent } from "react"
 import { Cover } from "@/components/Cover"
 import { RowSpectrum } from "@/components/Visualizer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
-import { artistLabel, formatBytes, formatDuration, sourceLabel } from "@/lib/format"
+import { artistLabel, formatBytes, formatDuration, isRecent, sourceLabel } from "@/lib/format"
 import type { Track } from "@/lib/types"
 
-type Mode = "list" | "cards" | "table"
+type Mode = "list" | "cards"
 type Filter = "all" | "lyrics" | "cover" | "missing"
 type Sort = "manual" | "title" | "artist" | "album" | "duration" | "added" | "size"
 
-const storageKey = "orfeus-listing"
+const legacyKey = "orfeus-listing"
+const selectClass = "h-11 cursor-pointer rounded-md border border-input bg-[#0c0c0c] px-3 text-base text-foreground [color-scheme:dark] [&>option]:bg-[#0c0c0c] [&>option]:text-foreground"
 
-function readChrome(): { mode: Mode; size: number } {
+function readChrome(listingKey: string): { mode: Mode; size: number; filter: Filter; sort: Sort } {
   try {
-    const raw = JSON.parse(localStorage.getItem(storageKey) ?? "") as { mode?: Mode; size?: number }
+    const stored = localStorage.getItem(`orfeus-listing-${listingKey}`) ?? (listingKey === "library" ? localStorage.getItem(legacyKey) : null)
+    const raw = JSON.parse(stored ?? "") as { mode?: string; size?: number; filter?: Filter; sort?: Sort }
+    const filter = raw.filter === "lyrics" || raw.filter === "cover" || raw.filter === "missing" ? raw.filter : "all"
+    const sort = raw.sort === "manual" || raw.sort === "artist" || raw.sort === "album" || raw.sort === "duration" || raw.sort === "added" || raw.sort === "size" ? raw.sort : "title"
     return {
-      mode: raw.mode === "cards" ? "cards" : raw.mode === "table" ? "table" : "list",
+      mode: raw.mode === "cards" ? "cards" : "list",
       size: typeof raw.size === "number" ? Math.min(100, Math.max(0, raw.size)) : 42,
+      filter,
+      sort,
     }
   } catch {
-    return { mode: "list", size: 42 }
+    return { mode: "list", size: 42, filter: "all", sort: "title" }
   }
 }
 
@@ -34,8 +40,10 @@ export function TrackBrowse({
   reorder,
   empty,
   manualSort = false,
+  listingKey = "library",
   selectedIds,
   onSelectVisible,
+  contextActions,
 }: {
   tracks: Track[]
   currentId: string | null
@@ -44,19 +52,22 @@ export function TrackBrowse({
   reorder?: (track: Track) => ReactNode
   empty?: ReactNode
   manualSort?: boolean
+  listingKey?: string
   selectedIds?: string[]
   onSelectVisible?: (ids: string[], selected: boolean) => void
+  contextActions?: (track: Track) => Array<{ label: string; icon?: ReactNode; onSelect: () => void }>
 }) {
-  const chrome = readChrome()
+  const chrome = readChrome(listingKey)
   const [mode, setMode] = useState<Mode>(chrome.mode)
   const [size, setSize] = useState(chrome.size)
   const [query, setQuery] = useState("")
-  const [filter, setFilter] = useState<Filter>("all")
-  const [sort, setSort] = useState<Sort>(manualSort ? "manual" : "title")
+  const [menu, setMenu] = useState<{ track: Track; x: number; y: number } | null>(null)
+  const [filter, setFilter] = useState<Filter>(chrome.filter)
+  const [sort, setSort] = useState<Sort>(chrome.sort === "manual" && !manualSort ? "title" : manualSort && chrome.sort === "title" && !localStorage.getItem(`orfeus-listing-${listingKey}`) ? "manual" : chrome.sort)
 
   useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify({ mode, size }))
-  }, [mode, size])
+    localStorage.setItem(`orfeus-listing-${listingKey}`, JSON.stringify({ mode, size, filter, sort }))
+  }, [filter, listingKey, mode, size, sort])
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -85,17 +96,42 @@ export function TrackBrowse({
     currentRef.current?.scrollIntoView({ block: "nearest" })
   }, [currentId])
 
+  useEffect(() => {
+    if (!menu) return
+    const close = () => setMenu(null)
+    window.addEventListener("click", close)
+    window.addEventListener("keydown", close)
+    return () => {
+      window.removeEventListener("click", close)
+      window.removeEventListener("keydown", close)
+    }
+  }, [menu])
+
+  function openMenu(track: Track, event: MouseEvent) {
+    if (!contextActions) return
+    event.preventDefault()
+    const x = Math.min(event.clientX, window.innerWidth - 200)
+    const y = Math.min(event.clientY, window.innerHeight - 220)
+    setMenu({ track, x, y })
+  }
+
+  function resizeFromWheel(event: WheelEvent) {
+    if (!event.altKey) return
+    event.preventDefault()
+    setSize((current) => Math.min(100, Math.max(0, current + (event.deltaY > 0 ? -6 : 6))))
+  }
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col" onWheel={resizeFromWheel}>
       <div className="flex flex-wrap items-center gap-2 px-6 pb-3">
-        <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search" aria-label="Search tracks" className="h-10 w-44" />
-        <select value={filter} onChange={(event) => setFilter(event.target.value as Filter)} aria-label="Filter" className="h-10 cursor-pointer rounded-md border border-input bg-background/40 px-2 text-base">
+        <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search" aria-label="Search tracks" maxLength={80} className="w-44" />
+        <select value={filter} onChange={(event) => setFilter(event.target.value as Filter)} aria-label="Filter" className={selectClass}>
           <option value="all">All</option>
           <option value="lyrics">With lyrics</option>
           <option value="cover">Missing cover</option>
           <option value="missing">Missing file</option>
         </select>
-        <select value={sort} onChange={(event) => setSort(event.target.value as Sort)} aria-label="Sort" className="h-10 cursor-pointer rounded-md border border-input bg-background/40 px-2 text-base">
+        <select value={sort} onChange={(event) => setSort(event.target.value as Sort)} aria-label="Sort" className={selectClass}>
           {manualSort ? <option value="manual">Playlist order</option> : null}
           <option value="title">Title</option>
           <option value="artist">Artist</option>
@@ -114,9 +150,6 @@ export function TrackBrowse({
         <Button variant={mode === "cards" ? "secondary" : "outline"} size="icon" aria-label="Cards" onClick={() => setMode("cards")}>
           <LayoutGrid className="size-5" />
         </Button>
-        <Button variant={mode === "table" ? "secondary" : "outline"} size="icon" aria-label="Table" onClick={() => setMode("table")}>
-          <Table2 className="size-5" />
-        </Button>
         {onSelectVisible ? (
           <label className="flex cursor-pointer items-center gap-2 text-sm">
             <input
@@ -132,65 +165,16 @@ export function TrackBrowse({
       </div>
       {visible.length === 0 ? (
         <div className="flex flex-1 items-center justify-center px-6 text-center">{empty ?? <p className="text-base text-muted-foreground">No tracks match this filter.</p>}</div>
-      ) : mode === "table" ? (
-        <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">
-          <table className="w-full border-separate border-spacing-y-1 text-left">
-            <thead className="sticky top-0 z-10 bg-black/70 text-xs tracking-[0.16em] text-muted-foreground uppercase">
-              <tr>
-                <th className="px-3 py-2 font-medium">Cover</th>
-                <th className="px-3 py-2 font-medium">Title</th>
-                <th className="px-3 py-2 font-medium">Artist</th>
-                <th className="px-3 py-2 font-medium">Album</th>
-                <th className="px-3 py-2 font-medium">Source</th>
-                <th className="px-3 py-2 font-medium">Time</th>
-                <th className="px-3 py-2 font-medium">Size</th>
-                <th className="px-3 py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((track, index) => (
-                <tr
-                  key={track.id}
-                  ref={currentId === track.id ? (node) => { currentRef.current = node } : undefined}
-                  className={`cursor-pointer ${currentId === track.id ? "glass" : "hover:bg-white/10"}`}
-                  onClick={() => onOpen(visible, index)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") onOpen(visible, index)
-                  }}
-                  tabIndex={0}
-                >
-                  <td className="rounded-l-xl px-3 py-2">
-                    <Cover path={track.coverPath} className={`size-12 rounded ${currentId === track.id ? "ring-2 ring-white" : ""}`} />
-                  </td>
-                  <td className="max-w-64 px-3 py-2">
-                    <span className="block truncate text-base">{track.title}</span>
-                    {currentId === track.id ? <span className="text-xs tracking-[0.18em] text-white uppercase">Playing</span> : null}
-                  </td>
-                  <td className="max-w-48 truncate px-3 py-2 text-sm text-muted-foreground">{artistLabel(track.artist)}</td>
-                  <td className="max-w-48 truncate px-3 py-2 text-sm text-muted-foreground">{track.album || "—"}</td>
-                  <td className="max-w-56 truncate px-3 py-2 text-sm text-muted-foreground" title={track.path}>{sourceLabel(track)}</td>
-                  <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums">{formatDuration(track.durationMs)}</td>
-                  <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums">{formatBytes(track.sizeBytes)}</td>
-                  <td className="rounded-r-xl px-3 py-2" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-                    <span className="flex items-center justify-end gap-1">
-                      {actions?.(track)}
-                      {sort === "manual" ? reorder?.(track) : null}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       ) : mode === "list" ? (
-        <ul className="min-h-0 flex-1 space-y-1 overflow-auto px-4 pb-4">
+        <ul className="min-h-0 flex-1 space-y-1 overflow-auto px-4 pt-4 pb-4">
           {visible.map((track, index) => (
             <li key={track.id}>
               <div
                 ref={currentId === track.id ? (node) => { currentRef.current = node } : undefined}
-                className={`grid cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 text-left hover:bg-white/10 ${currentId === track.id ? "glass ring-1 ring-white/50" : ""}`}
+                className={`grid cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 text-left hover:bg-white/10 ${currentId === track.id ? "glass ring-1 ring-white/50" : ""} ${isRecent(track.addedAt) && currentId !== track.id ? "ring-1 ring-gold/35" : ""}`}
                 style={{ gridTemplateColumns: "auto minmax(0,1fr) auto auto auto" }}
                 onClick={() => onOpen(visible, index)}
+                onContextMenu={(event) => openMenu(track, event)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") onOpen(visible, index)
                 }}
@@ -199,7 +183,7 @@ export function TrackBrowse({
               >
                 <Cover path={track.coverPath} className={`rounded ${currentId === track.id ? "ring-2 ring-white" : ""}`} style={{ width: cover, height: cover }} />
                 <span className="min-w-0">
-                  <span className={`block truncate ${size > 60 ? "text-lg" : "text-base"}`}>{track.title}</span>
+                  <span className={`block truncate ${size > 60 ? "text-lg" : "text-base"}`}>{isRecent(track.addedAt) ? <span className="mr-2 text-xs tracking-[0.14em] text-gold uppercase">New</span> : null}{track.title}</span>
                   {currentId === track.id ? <span className="text-xs tracking-[0.18em] text-white uppercase">Playing</span> : null}
                   {Math.abs(track.gain - 1) > 0.02 ? <span className="ml-2 text-xs text-muted-foreground">{Math.round(track.gain * 100)}%</span> : null}
                   <span className="block truncate text-sm text-muted-foreground">
@@ -225,12 +209,13 @@ export function TrackBrowse({
           ))}
         </ul>
       ) : (
-        <ul className="min-h-0 flex-1 overflow-auto px-4 pb-4" style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${card}px, 1fr))`, alignContent: "start" }}>
+        <ul className="min-h-0 flex-1 overflow-auto px-4 pt-4 pb-4" style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${card}px, 1fr))`, alignContent: "start" }}>
           {visible.map((track, index) => (
             <li key={track.id}>
               <div
-                className={`cursor-pointer rounded-2xl p-2 hover:bg-white/10 ${currentId === track.id ? "glass ring-1 ring-white/50" : ""}`}
+                className={`cursor-pointer rounded-2xl p-2 hover:bg-white/10 ${currentId === track.id ? "glass ring-1 ring-white/50" : ""} ${isRecent(track.addedAt) && currentId !== track.id ? "ring-1 ring-gold/35" : ""}`}
                 onClick={() => onOpen(visible, index)}
+                onContextMenu={(event) => openMenu(track, event)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") onOpen(visible, index)
                 }}
@@ -247,7 +232,7 @@ export function TrackBrowse({
                   ) : null}
                 </div>
                 {currentId === track.id ? <span className="mt-2 block text-xs tracking-[0.18em] text-white uppercase">Playing</span> : null}
-                <span className={`block truncate ${size > 60 ? "text-lg" : "text-base"} ${currentId === track.id ? "" : "mt-2"}`}>{track.title}</span>
+                <span className={`block truncate ${size > 60 ? "text-lg" : "text-base"} ${currentId === track.id ? "" : "mt-2"}`}>{isRecent(track.addedAt) ? <span className="mr-2 text-xs tracking-[0.14em] text-gold uppercase">New</span> : null}{track.title}</span>
                 <span className="block truncate text-sm text-muted-foreground">{artistLabel(track.artist)}</span>
                 <span className="block truncate text-xs text-white/45" title={track.path}>{sourceLabel(track)}</span>
                 <RowSpectrum active={currentId === track.id} className="mt-2 h-8 w-full" />
@@ -257,6 +242,16 @@ export function TrackBrowse({
           ))}
         </ul>
       )}
+      {menu && contextActions ? (
+        <div className="glass-strong fixed z-50 min-w-48 rounded-md p-1" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
+          {contextActions(menu.track).map((action) => (
+            <button key={action.label} type="button" className="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-left text-base hover:bg-accent" onClick={() => { action.onSelect(); setMenu(null) }}>
+              {action.icon}
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }

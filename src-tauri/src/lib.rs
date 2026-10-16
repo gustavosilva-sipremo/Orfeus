@@ -1,4 +1,5 @@
 mod audio;
+mod disc;
 mod db;
 mod export;
 mod library;
@@ -6,6 +7,7 @@ mod media;
 mod models;
 mod package;
 mod search;
+mod stats;
 mod tags;
 mod util;
 mod youtube;
@@ -26,6 +28,7 @@ pub struct AppState {
 }
 
 fn setup_app(app: &mut tauri::App) -> Result<(), String> {
+    quiet_selection_warning();
     let data_dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
     std::fs::create_dir_all(data_dir.join("covers")).map_err(|err| err.to_string())?;
     std::fs::create_dir_all(data_dir.join("owned")).map_err(|err| err.to_string())?;
@@ -51,6 +54,25 @@ fn setup_app(app: &mut tauri::App) -> Result<(), String> {
     Ok(())
 }
 
+fn quiet_selection_warning() {
+    #[cfg(target_os = "linux")]
+    glib::log_set_default_handler(|domain, level, message| {
+        let domain = domain.unwrap_or("");
+        if domain == "Gdk" && message.contains("Error writing selection data") {
+            return;
+        }
+        let name = match level {
+            glib::LogLevel::Error => "ERROR",
+            glib::LogLevel::Critical => "CRITICAL",
+            glib::LogLevel::Warning => "WARNING",
+            glib::LogLevel::Message => "MESSAGE",
+            glib::LogLevel::Info => "INFO",
+            glib::LogLevel::Debug => "DEBUG",
+        };
+        eprintln!("{domain}-{name}: {message}");
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -66,6 +88,9 @@ pub fn run() {
             library::update_track,
             library::reorder_tracks,
             library::read_image,
+            library::list_covers,
+            library::delete_cover,
+            library::stage_cover,
             library::delete_track,
             library::list_trash,
             library::restore_track,
@@ -81,6 +106,8 @@ pub fn run() {
             library::add_to_playlist,
             library::remove_from_playlist,
             library::move_playlist_track,
+            stats::record_listen,
+            stats::list_listens,
             search::search_metadata,
             search::fetch_cover,
             export::export_tracks,
@@ -93,6 +120,8 @@ pub fn run() {
             youtube::youtube_download,
             youtube::youtube_skip,
             youtube::youtube_reveal,
+            disc::list_drives,
+            disc::burn_disc,
             audio::play,
             audio::pause,
             audio::resume,

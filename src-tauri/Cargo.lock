@@ -2682,6 +2682,7 @@ name = "orfeus"
 version = "1.0.0"
 dependencies = [
  "cpal",
+ "glib",
  "hex",
  "lofty",
  "reqwest 0.12.28",

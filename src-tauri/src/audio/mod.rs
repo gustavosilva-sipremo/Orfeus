@@ -151,6 +151,8 @@ struct Shared {
     loop_mode: Mutex<String>,
     error: Mutex<String>,
     device_error: Mutex<String>,
+    output_broken: AtomicBool,
+    output_thread: Mutex<Option<thread::Thread>>,
 }
 
 impl Shared {
@@ -179,6 +181,8 @@ impl Shared {
             loop_mode: Mutex::new("off".into()),
             error: Mutex::new(String::new()),
             device_error: Mutex::new(String::new()),
+            output_broken: AtomicBool::new(false),
+            output_thread: Mutex::new(None),
         }
     }
 }
@@ -194,7 +198,7 @@ impl AudioEngine {
         let decode_app = app.clone();
         thread::Builder::new()
             .name("orfeus-audio".into())
-            .spawn(move || thread_main(cmd_rx, decode_shared, decode_app, rate))
+            .spawn(move || thread_main(cmd_rx, decode_shared, decode_app))
             .expect("audio thread");
         let fft_shared = shared.clone();
         thread::Builder::new()
@@ -389,7 +393,7 @@ fn allowed_rate(rate: f32) -> Option<f32> {
     }
 }
 
-fn thread_main(rx: Receiver<Cmd>, shared: Arc<Shared>, app: AppHandle, dst_rate: u32) {
+fn thread_main(rx: Receiver<Cmd>, shared: Arc<Shared>, app: AppHandle) {
     let mut player = Player {
         queue: Vec::new(),
         index: 0,
@@ -418,6 +422,7 @@ fn thread_main(rx: Receiver<Cmd>, shared: Arc<Shared>, app: AppHandle, dst_rate:
             PumpStatus::Idle
         } else {
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let dst_rate = shared.device_rate.load(Ordering::Relaxed).max(8_000);
                 pump_player(&mut player, &shared, dst_rate)
             })) {
                 Ok(status) => status,
@@ -1340,6 +1345,10 @@ fn lock_string(slot: &Mutex<String>) -> MutexGuard<'_, String> {
     slot.lock().unwrap_or_else(|poison| poison.into_inner())
 }
 
+fn lock_thread(slot: &Mutex<Option<thread::Thread>>) -> MutexGuard<'_, Option<thread::Thread>> {
+    slot.lock().unwrap_or_else(|poison| poison.into_inner())
+}
+
 fn try_queue(shared: &Shared) -> Option<MutexGuard<'_, VecDeque<f32>>> {
     match shared.playback.try_lock() {
         Ok(guard) => Some(guard),
@@ -1525,16 +1534,33 @@ fn spawn_output(shared: Arc<Shared>) -> u32 {
     let shared_out = shared.clone();
     thread::Builder::new()
         .name("orfeus-output".into())
-        .spawn(move || match open_stream(shared_out) {
-            Ok((stream, rate)) => {
-                let _ = tx.send(Ok(rate));
-                let _keep = stream;
-                loop {
-                    thread::park();
+        .spawn(move || {
+            *lock_thread(&shared_out.output_thread) = Some(thread::current());
+            let mut announced = false;
+            loop {
+                shared_out.output_broken.store(false, Ordering::Release);
+                match open_stream(shared_out.clone()) {
+                    Ok((stream, rate)) => {
+                        shared_out.device_rate.store(rate, Ordering::Relaxed);
+                        if !announced {
+                            let _ = tx.send(Ok(rate));
+                            announced = true;
+                        }
+                        while !shared_out.output_broken.load(Ordering::Acquire) {
+                            thread::park_timeout(Duration::from_millis(250));
+                        }
+                        drop(stream);
+                        thread::sleep(Duration::from_millis(200));
+                    }
+                    Err(err) => {
+                        if !announced {
+                            let _ = tx.send(Err(err));
+                            return;
+                        }
+                        *lock_string(&shared_out.device_error) = err;
+                        thread::sleep(Duration::from_secs(1));
+                    }
                 }
-            }
-            Err(err) => {
-                let _ = tx.send(Err(err));
             }
         })
         .expect("output thread");
@@ -1560,11 +1586,11 @@ fn open_stream(shared: Arc<Shared>) -> Result<(Stream, u32), String> {
     let sample_format = supported.sample_format();
     let rate = supported.sample_rate().0;
     let channels = supported.channels() as usize;
-    let preferred = stream_config(&supported, true);
-    let fallback = stream_config(&supported, false);
+    let preferred = stream_config(&supported, false);
+    let fixed = stream_config(&supported, true);
     let stream = match start_stream(&device, &preferred, sample_format, channels, shared.clone()) {
         Ok(stream) => stream,
-        Err(_) => start_stream(&device, &fallback, sample_format, channels, shared)?,
+        Err(_) => start_stream(&device, &fixed, sample_format, channels, shared)?,
     };
     stream.play().map_err(|err| err.to_string())?;
     Ok((stream, rate))
@@ -1587,7 +1613,18 @@ fn start_stream(
     channels: usize,
     shared: Arc<Shared>,
 ) -> Result<Stream, String> {
-    let err = |error| eprintln!("orfeus audio: {error}");
+    let err = {
+        let shared = shared.clone();
+        move |error: cpal::StreamError| {
+            if shared.output_broken.swap(true, Ordering::AcqRel) {
+                return;
+            }
+            eprintln!("orfeus audio: {error}");
+            if let Some(worker) = lock_thread(&shared.output_thread).as_ref() {
+                worker.unpark();
+            }
+        }
+    };
     match sample_format {
         SampleFormat::F32 => device
             .build_output_stream(
@@ -1655,6 +1692,10 @@ fn spectrum_loop(shared: Arc<Shared>, app: AppHandle) {
     let fft = planner.plan_fft_forward(2048);
     let mut smoothed = [0f32; 64];
     loop {
+        if !shared.playing.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(250));
+            continue;
+        }
         thread::sleep(Duration::from_millis(24));
         let window = match shared.spectrum.try_lock() {
             Ok(guard) if guard.len() >= 2048 => {

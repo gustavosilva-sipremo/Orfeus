@@ -4,6 +4,7 @@ import * as api from "@/lib/api"
 import { nextCrossfade, nextLoop, nextRate } from "@/lib/format"
 import type { LoopMode, PlaybackState, QueueTrack, Track } from "@/lib/types"
 import { toQueue } from "@/lib/types"
+import { notePlayback } from "@/lib/listens"
 import { message } from "@/lib/utils"
 import { useLibrary } from "@/stores/library"
 
@@ -60,6 +61,7 @@ type PlayerState = PlaybackState & {
   next: () => Promise<void>
   previous: () => Promise<void>
   setStageOpen: (open: boolean) => void
+  ready: boolean
   volume: number
   setVolume: (volume: number) => Promise<void>
   crossfade: number
@@ -95,6 +97,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   stageOpen: false,
   playlistId: null,
   queue: [],
+  ready: false,
   volume: readVolume(),
   crossfade: readCrossfade(),
   init: async () => {
@@ -103,7 +106,17 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     const crossfade = readCrossfade()
     set({ crossfade })
     if (!api.desktop()) {
+      set({ ready: true })
       window.setInterval(() => {
+        const heard = get()
+        notePlayback({
+          trackId: heard.trackId,
+          playing: heard.playing,
+          position: heard.position,
+          title: heard.title,
+          artist: heard.artist,
+          coverPath: heard.coverPath,
+        })
         tick += 1
         const playing = get().playing
         const bands = Array.from({ length: 64 }, (_, index) => {
@@ -146,11 +159,18 @@ export const usePlayer = create<PlayerState>((set, get) => ({
         heard = payload.trackId
         void api.setTrackGain(track?.gain ?? 1)
       }
-      set(
-        track
-          ? { ...payload, title: track.title, artist: track.artist, coverPath: track.coverPath }
-          : payload,
-      )
+      const next = track
+        ? { ...payload, title: track.title, artist: track.artist, coverPath: track.coverPath }
+        : payload
+      set(next)
+      notePlayback({
+        trackId: next.trackId,
+        playing: next.playing,
+        position: next.position,
+        title: next.title,
+        artist: next.artist,
+        coverPath: next.coverPath,
+      })
     })
     const unlistenSpectrum = await listen<number[]>("playback://spectrum", (event) => {
       set({ bands: event.payload })
@@ -164,6 +184,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     } catch (error) {
       set({ error: message(error) })
     }
+    set({ ready: true })
   },
   playTracks: async (tracks, index, loopMode = "off", playlistId = null) => {
     const chosen = tracks[index]

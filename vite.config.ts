@@ -22,7 +22,6 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) return
-          if (id.includes("/motion/") || id.includes("/framer-motion/")) return "motion"
           if (id.includes("/@radix-ui/") || id.includes("/lucide-react/")) return "ui"
           return "vendor"
         },
