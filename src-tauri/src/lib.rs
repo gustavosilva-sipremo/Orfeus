@@ -100,6 +100,7 @@ pub fn run() {
             audio::seek,
             audio::set_rate,
             audio::set_loop,
+            audio::set_crossfade,
             audio::set_volume,
             audio::set_track_gain,
             audio::next,

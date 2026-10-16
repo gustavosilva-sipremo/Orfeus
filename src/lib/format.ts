@@ -12,6 +12,42 @@ export function formatDuration(ms: number) {
   return formatClock(ms / 1000)
 }
 
+export function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 MB"
+  const gb = bytes / 1024 ** 3
+  if (gb >= 1) return `${gb >= 10 ? gb.toFixed(0) : gb.toFixed(1)} GB`
+  const mb = bytes / 1024 ** 2
+  if (mb >= 10) return `${Math.round(mb)} MB`
+  if (mb >= 0.1) return `${mb.toFixed(1)} MB`
+  return "0.1 MB"
+}
+
+export function formatMinutes(ms: number) {
+  const minutes = Math.max(0, Math.round(ms / 60_000))
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`
+}
+
+export function tally(tracks: { sizeBytes?: number; durationMs: number }[]) {
+  const bytes = tracks.reduce((sum, track) => sum + (track.sizeBytes ?? 0), 0)
+  const ms = tracks.reduce((sum, track) => sum + track.durationMs, 0)
+  return `${formatBytes(bytes)} · ${formatMinutes(ms)}`
+}
+
+export function nextCrossfade(seconds: number) {
+  if (seconds < 1) return 1.5
+  if (seconds < 2) return 3
+  if (seconds < 4) return 5
+  return 0
+}
+
+export function crossfadeLabel(seconds: number) {
+  if (seconds < 1) return "Off"
+  return `${seconds}s`
+}
+
 export function rateLabel(rate: number) {
   if (rate < 0.75) return "½×"
   if (rate > 1.5) return "2×"

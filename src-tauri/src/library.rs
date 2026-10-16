@@ -1074,9 +1074,11 @@ fn refresh_missing(conn: &Connection) -> Result<(), String> {
 }
 
 fn map_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<TrackDto> {
+    let path: String = row.get(1)?;
+    let size_bytes = std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
     Ok(TrackDto {
         id: row.get(0)?,
-        path: row.get(1)?,
+        path,
         storage: row.get(2)?,
         title: row.get(3)?,
         artist: row.get(4)?,
@@ -1089,6 +1091,7 @@ fn map_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<TrackDto> {
         missing: row.get::<_, i64>(11)? != 0,
         added_at: row.get(12)?,
         shelf_id: row.get(13)?,
+        size_bytes,
     })
 }
 

@@ -46,6 +46,7 @@ enum Cmd {
     Next,
     Previous,
     Stop,
+    SetCrossfade(f32),
     Describe {
         id: String,
         title: String,
@@ -94,7 +95,18 @@ struct Player {
     rate: f32,
     paused: bool,
     ended: bool,
+    crossfade: f32,
     current: Option<Active>,
+    blend: Option<Blend>,
+}
+
+struct Blend {
+    incoming: Active,
+    next_index: usize,
+    frames_done: usize,
+    frames_total: usize,
+    announced: bool,
+    announce_at: f64,
 }
 
 struct Active {
@@ -241,6 +253,10 @@ impl AudioEngine {
         self.send(Cmd::SetLoop(mode))
     }
 
+    pub fn set_crossfade(&self, seconds: f32) -> Result<(), String> {
+        self.send(Cmd::SetCrossfade(allowed_crossfade(seconds)))
+    }
+
     pub fn set_volume(&self, volume: f32) {
         self.shared
             .volume_bits
@@ -315,6 +331,11 @@ pub fn set_loop(state: State<AppState>, mode: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn set_crossfade(state: State<AppState>, seconds: f32) -> Result<(), String> {
+    state.audio.set_crossfade(seconds)
+}
+
+#[tauri::command]
 pub fn set_volume(state: State<AppState>, volume: f32) {
     state.audio.set_volume(volume);
 }
@@ -344,6 +365,18 @@ pub fn playback_state(state: State<AppState>) -> PlaybackState {
     state.audio.snapshot()
 }
 
+fn allowed_crossfade(seconds: f32) -> f32 {
+    if (seconds - 1.5).abs() < 0.05 {
+        1.5
+    } else if (seconds - 3.0).abs() < 0.05 {
+        3.0
+    } else if (seconds - 5.0).abs() < 0.05 {
+        5.0
+    } else {
+        0.0
+    }
+}
+
 fn allowed_rate(rate: f32) -> Option<f32> {
     if (rate - 0.5).abs() < 0.02 {
         Some(0.5)
@@ -364,7 +397,9 @@ fn thread_main(rx: Receiver<Cmd>, shared: Arc<Shared>, app: AppHandle, dst_rate:
         rate: 1.0,
         paused: true,
         ended: false,
+        crossfade: 0.0,
         current: None,
+        blend: None,
     };
     let mut last_emit = Instant::now();
     loop {
@@ -379,23 +414,16 @@ fn thread_main(rx: Receiver<Cmd>, shared: Arc<Shared>, app: AppHandle, dst_rate:
             }
         }
 
-        let status = if player.paused || player.current.is_none() {
+        let status = if player.paused || (player.current.is_none() && player.blend.is_none()) {
             PumpStatus::Idle
         } else {
-            let rate = player.rate;
-            let loop_mode = player.loop_mode;
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                pump(
-                    player.current.as_mut().expect("open track"),
-                    &shared,
-                    dst_rate,
-                    rate,
-                    loop_mode,
-                )
+                pump_player(&mut player, &shared, dst_rate)
             })) {
                 Ok(status) => status,
                 Err(_) => {
                     player.current = None;
+                    player.blend = None;
                     PumpStatus::Error("Playback hit a bad frame and skipped ahead.".into())
                 }
             }
@@ -406,6 +434,7 @@ fn thread_main(rx: Receiver<Cmd>, shared: Arc<Shared>, app: AppHandle, dst_rate:
                 set_error(&shared, &err);
                 let next = player.index + 1;
                 player.current = None;
+                player.blend = None;
                 if !open_from(&mut player, &shared, next) {
                     finish(&mut player, &shared);
                 }
@@ -461,6 +490,7 @@ fn handle(player: &mut Player, shared: &Shared, cmd: Cmd) {
             player.ended = false;
             player.paused = false;
             player.current = None;
+            player.blend = None;
             let start = if player.queue.is_empty() {
                 0
             } else {
@@ -484,6 +514,11 @@ fn handle(player: &mut Player, shared: &Shared, cmd: Cmd) {
             }
         }
         Cmd::Seek(seconds) => {
+            if player.blend.as_ref().is_some_and(|blend| blend.announced) {
+                promote_blend(player, shared);
+            } else {
+                player.blend = None;
+            }
             if let Some(active) = player.current.as_mut() {
                 player.ended = false;
                 if let Err(err) = seek_to(active, shared, seconds) {
@@ -499,21 +534,34 @@ fn handle(player: &mut Player, shared: &Shared, cmd: Cmd) {
             player.loop_mode = LoopMode::parse(&mode);
             *lock_string(&shared.loop_mode) = player.loop_mode.as_str().into();
         }
+        Cmd::SetCrossfade(seconds) => {
+            player.crossfade = allowed_crossfade(seconds);
+        }
         Cmd::Next => {
-            let _ = open_from(player, shared, player.index + 1);
-            if player.current.is_none() {
+            let start = match &player.blend {
+                Some(blend) => blend.next_index + 1,
+                None => player.index + 1,
+            };
+            player.blend = None;
+            if !transition(player, shared, start, true) {
                 finish(player, shared);
             }
         }
         Cmd::Previous => {
+            let announced = player.blend.as_ref().is_some_and(|blend| blend.announced);
+            if announced {
+                promote_blend(player, shared);
+            } else {
+                player.blend = None;
+            }
             let position = f64::from_bits(shared.position.load(Ordering::Relaxed));
             if position > 2.0 || player.index == 0 {
                 if let Some(active) = player.current.as_mut() {
                     player.ended = false;
                     let _ = seek_to(active, shared, 0.0);
                 }
-            } else {
-                let _ = open_from(player, shared, player.index.saturating_sub(1));
+            } else if !transition(player, shared, player.index.saturating_sub(1), true) {
+                finish(player, shared);
             }
         }
         Cmd::Stop => stop_player(player, shared),
@@ -570,6 +618,7 @@ fn stop_player(player: &mut Player, shared: &Shared) {
     player.queue.clear();
     player.index = 0;
     player.current = None;
+    player.blend = None;
     player.paused = true;
     player.ended = false;
     clear_heard(shared);
@@ -584,6 +633,7 @@ fn stop_player(player: &mut Player, shared: &Shared) {
 }
 
 fn open_from(player: &mut Player, shared: &Shared, start: usize) -> bool {
+    player.blend = None;
     if player.queue.is_empty() {
         player.current = None;
         sync_flags(player, shared);
@@ -779,6 +829,232 @@ fn rewind(active: &mut Active) -> Result<(), String> {
     Ok(())
 }
 
+fn pump_player(player: &mut Player, shared: &Shared, dst_rate: u32) -> PumpStatus {
+    if player.blend.is_some() {
+        return pump_blend(player, shared, dst_rate);
+    }
+    if should_crossfade(player, shared, dst_rate) {
+        let start = player.index + 1;
+        let _ = transition(player, shared, start, false);
+        if player.blend.is_some() {
+            return pump_blend(player, shared, dst_rate);
+        }
+    }
+    let Some(active) = player.current.as_mut() else {
+        return PumpStatus::Idle;
+    };
+    let rate = player.rate;
+    let loop_mode = player.loop_mode;
+    pump(active, shared, dst_rate, rate, loop_mode)
+}
+
+fn should_crossfade(player: &Player, shared: &Shared, dst_rate: u32) -> bool {
+    if player.crossfade <= 0.05 || player.loop_mode == LoopMode::Track || player.current.is_none() {
+        return false;
+    }
+    let Some(active) = player.current.as_ref() else {
+        return false;
+    };
+    if active.duration <= 0.0 || resolve_index(player, player.index + 1).is_none() {
+        return false;
+    }
+    remaining_wall(player, shared, dst_rate, active.duration) <= f64::from(player.crossfade)
+}
+
+fn remaining_wall(player: &Player, shared: &Shared, dst_rate: u32, duration: f64) -> f64 {
+    let heard = f64::from_bits(shared.position.load(Ordering::Relaxed));
+    let queued = queue_mut(shared).len() / 2;
+    let dst = f64::from(dst_rate.max(1));
+    let rate = f64::from(player.rate.max(0.05));
+    let upcoming = heard + queued as f64 / dst * rate;
+    (duration - upcoming) / rate
+}
+
+fn resolve_index(player: &Player, start: usize) -> Option<usize> {
+    let len = player.queue.len();
+    if len == 0 {
+        return None;
+    }
+    match player.loop_mode {
+        LoopMode::Playlist => Some(start % len),
+        LoopMode::Off | LoopMode::Track => (start < len).then_some(start),
+    }
+}
+
+fn transition(player: &mut Player, shared: &Shared, start: usize, manual: bool) -> bool {
+    if player.crossfade <= 0.05 || player.current.is_none() {
+        return open_from(player, shared, start);
+    }
+    let Some(index) = resolve_index(player, start) else {
+        player.blend = None;
+        player.current = None;
+        sync_flags(player, shared);
+        return false;
+    };
+    let track = &player.queue[index];
+    let fallback = (track.duration_ms > 0).then_some(track.duration_ms as f64 / 1000.0);
+    let path = track.path.clone();
+    if manual {
+        clear_heard(shared);
+    }
+    let incoming = match open_active(Path::new(&path), fallback) {
+        Ok(mut active) => {
+            if active.duration <= 0.0 {
+                active.duration = fallback.unwrap_or(0.0);
+            }
+            active
+        }
+        Err(err) => {
+            set_error(shared, &err);
+            return open_from(player, shared, index + 1);
+        }
+    };
+    let dst = shared.device_rate.load(Ordering::Relaxed).max(8_000);
+    let mut seconds = player.crossfade;
+    if !manual {
+        if let Some(active) = player.current.as_ref() {
+            let left = remaining_wall(player, shared, dst, active.duration).max(0.0) as f32;
+            seconds = seconds.min(left).max(0.15);
+        }
+    }
+    let frames = (seconds * dst as f32).round().max(1.0) as usize;
+    let heard = f64::from_bits(shared.position.load(Ordering::Relaxed));
+    let announce_at = if manual {
+        heard
+    } else {
+        player
+            .current
+            .as_ref()
+            .map(|active| (active.duration - f64::from(seconds) * f64::from(player.rate.max(0.05))).max(0.0))
+            .unwrap_or(heard)
+    };
+    player.ended = false;
+    player.paused = false;
+    player.blend = Some(Blend {
+        incoming,
+        next_index: index,
+        frames_done: 0,
+        frames_total: frames,
+        announced: false,
+        announce_at,
+    });
+    sync_flags(player, shared);
+    true
+}
+
+fn promote_blend(player: &mut Player, shared: &Shared) {
+    let Some(blend) = player.blend.take() else {
+        return;
+    };
+    player.index = blend.next_index;
+    let duration = blend.incoming.duration;
+    player.current = Some(blend.incoming);
+    player.ended = false;
+    if !blend.announced {
+        publish(player, shared);
+        let into = blend.frames_done as f64 / f64::from(shared.device_rate.load(Ordering::Relaxed).max(1))
+            * f64::from(player.rate.max(0.05));
+        shared.position.store(into.to_bits(), Ordering::Relaxed);
+        shared.duration.store(duration.to_bits(), Ordering::Relaxed);
+    }
+    sync_flags(player, shared);
+}
+
+fn announce_blend(player: &mut Player, shared: &Shared) {
+    let heard = f64::from_bits(shared.position.load(Ordering::Relaxed));
+    let Some((next_index, duration)) = player.blend.as_mut().and_then(|blend| {
+        if blend.announced || heard + 0.03 < blend.announce_at {
+            return None;
+        }
+        blend.announced = true;
+        Some((blend.next_index, blend.incoming.duration))
+    }) else {
+        return;
+    };
+    player.index = next_index;
+    publish(player, shared);
+    shared.position.store(0f64.to_bits(), Ordering::Relaxed);
+    shared.duration.store(duration.to_bits(), Ordering::Relaxed);
+    sync_flags(player, shared);
+}
+
+fn pump_blend(player: &mut Player, shared: &Shared, dst_rate: u32) -> PumpStatus {
+    announce_blend(player, shared);
+    let max_samples = (dst_rate as usize).saturating_mul(2);
+    let queued = queue_mut(shared).len();
+    if queued >= max_samples {
+        return PumpStatus::Buffered;
+    }
+    let Some((done, total)) = player.blend.as_ref().map(|blend| (blend.frames_done, blend.frames_total)) else {
+        return PumpStatus::Idle;
+    };
+    if done >= total {
+        promote_blend(player, shared);
+        return PumpStatus::Pumped;
+    }
+    let remain = total.saturating_sub(done).max(1);
+    let room = ((max_samples - queued) / 2).clamp(1, 4096).min(remain);
+    let rate = player.rate;
+    let outgoing = match player.current.as_mut() {
+        Some(active) => fill_frames(active, dst_rate, rate, room),
+        None => Ok(Vec::new()),
+    };
+    let incoming = match player.blend.as_mut() {
+        Some(blend) => fill_frames(&mut blend.incoming, dst_rate, rate, room),
+        None => Ok(Vec::new()),
+    };
+    let (outgoing, incoming) = match (outgoing, incoming) {
+        (Ok(outgoing), Ok(incoming)) => (outgoing, incoming),
+        (Err(err), _) | (_, Err(err)) => return PumpStatus::Error(err),
+    };
+    let frames = (outgoing.len() / 2).max(incoming.len() / 2);
+    if frames == 0 {
+        promote_blend(player, shared);
+        return PumpStatus::Pumped;
+    }
+    let start = done;
+    let total = total.max(1);
+    let mixed = mix_crossfade(&outgoing, &incoming, start, total);
+    let mixed_frames = mixed.len() / 2;
+    if mixed_frames == 0 {
+        promote_blend(player, shared);
+        return PumpStatus::Pumped;
+    }
+    queue_mut(shared).extend(mixed);
+    let finished = player.blend.as_mut().is_some_and(|blend| {
+        blend.frames_done += mixed_frames;
+        blend.frames_done >= blend.frames_total
+    });
+    if finished {
+        promote_blend(player, shared);
+    }
+    PumpStatus::Pumped
+}
+
+fn ease_in_out(progress: f32) -> f32 {
+    let t = progress.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn mix_crossfade(outgoing: &[f32], incoming: &[f32], start_frame: usize, total: usize) -> Vec<f32> {
+    let frames = (outgoing.len() / 2).max(incoming.len() / 2);
+    let total = total.max(1);
+    let mut mixed = Vec::with_capacity(frames * 2);
+    for index in 0..frames {
+        let span = total.saturating_sub(1).max(1) as f32;
+        let progress = (start_frame + index) as f32 / span;
+        let fade_in = ease_in_out(progress);
+        let fade_out = 1.0 - fade_in;
+        let left = outgoing.get(index * 2).copied().unwrap_or(0.0) * fade_out
+            + incoming.get(index * 2).copied().unwrap_or(0.0) * fade_in;
+        let right = outgoing.get(index * 2 + 1).copied().unwrap_or(0.0) * fade_out
+            + incoming.get(index * 2 + 1).copied().unwrap_or(0.0) * fade_in;
+        mixed.push(left);
+        mixed.push(right);
+    }
+    mixed
+}
+
 fn pump(
     active: &mut Active,
     shared: &Shared,
@@ -799,12 +1075,47 @@ fn pump(
         }
     }
     let max_samples = (dst_rate as usize).saturating_mul(2);
-    if queue_mut(shared).len() >= max_samples {
+    let queued = queue_mut(shared).len();
+    if queued >= max_samples {
         return PumpStatus::Buffered;
+    }
+    let room = ((max_samples - queued) / 2).clamp(1, 4096);
+    match fill_frames(active, dst_rate, rate, room) {
+        Ok(produced) if !produced.is_empty() => {
+            queue_mut(shared).extend(produced);
+            PumpStatus::Pumped
+        }
+        Ok(_) if active.eof => {
+            if loop_mode == LoopMode::Track {
+                return match rewind(active) {
+                    Ok(()) => {
+                        shared.generation.fetch_add(1, Ordering::AcqRel);
+                        shared.position.store(0f64.to_bits(), Ordering::Relaxed);
+                        PumpStatus::Pumped
+                    }
+                    Err(err) => PumpStatus::Error(err),
+                };
+            }
+            PumpStatus::Eof
+        }
+        Ok(_) => PumpStatus::Idle,
+        Err(err) => PumpStatus::Error(err),
+    }
+}
+
+fn fill_frames(active: &mut Active, dst_rate: u32, rate: f32, max_frames: usize) -> Result<Vec<f32>, String> {
+    if max_frames == 0 {
+        return Ok(Vec::new());
+    }
+    if active.sample_rate == 0 {
+        decode_until_rate(active)?;
+        if active.sample_rate == 0 {
+            return Ok(Vec::new());
+        }
     }
     let ratio = (active.sample_rate as f64 / dst_rate.max(1) as f64) * f64::from(rate.max(0.05));
     if !ratio.is_finite() || ratio <= 0.0 {
-        return PumpStatus::Error("Invalid playback rate.".into());
+        return Err("Invalid playback rate.".into());
     }
     let alpha = if ratio > 1.05 {
         (1.0 / ratio) as f32
@@ -812,9 +1123,9 @@ fn pump(
         1.0
     };
     let filter = ratio > 1.05;
-    let mut produced = Vec::<f32>::with_capacity(8192);
+    let mut produced = Vec::<f32>::with_capacity(max_frames.saturating_mul(2));
     let mut packets = 0;
-    while produced.len() / 2 < 4096 {
+    while produced.len() / 2 < max_frames {
         while active.pending.len() / 2 < active.cursor.floor() as usize + 4 && !active.eof {
             packets += 1;
             if packets > 96 {
@@ -823,7 +1134,7 @@ fn pump(
             match decode_some(active) {
                 Ok(true) => {}
                 Ok(false) => active.eof = true,
-                Err(err) => return PumpStatus::Error(err),
+                Err(err) => return Err(err),
             }
         }
         let frames = active.pending.len() / 2;
@@ -858,24 +1169,7 @@ fn pump(
             }
         }
     }
-    if !produced.is_empty() {
-        queue_mut(shared).extend(produced);
-        return PumpStatus::Pumped;
-    }
-    if active.eof {
-        if loop_mode == LoopMode::Track {
-            return match rewind(active) {
-                Ok(()) => {
-                    shared.generation.fetch_add(1, Ordering::AcqRel);
-                    shared.position.store(0f64.to_bits(), Ordering::Relaxed);
-                    PumpStatus::Pumped
-                }
-                Err(err) => PumpStatus::Error(err),
-            };
-        }
-        return PumpStatus::Eof;
-    }
-    PumpStatus::Idle
+    Ok(produced)
 }
 
 fn decode_until_rate(active: &mut Active) -> Result<(), String> {
@@ -1440,11 +1734,26 @@ fn bands_from(mags: &[f32]) -> [f32; 64] {
 
 #[cfg(test)]
 mod tests {
-    use super::hermite;
+    use super::{ease_in_out, hermite, mix_crossfade};
 
     #[test]
     fn hermite_passes_through_the_current_sample() {
         let sample = hermite(0.0, 0.4, 0.8, 1.0, 0.0);
         assert!((sample - 0.4).abs() < 0.000_1);
+    }
+
+    #[test]
+    fn crossfade_eases_out_of_the_old_track_and_into_the_new_one() {
+        assert!((ease_in_out(0.0) - 0.0).abs() < 0.000_1);
+        assert!((ease_in_out(0.5) - 0.5).abs() < 0.000_1);
+        assert!((ease_in_out(1.0) - 1.0).abs() < 0.000_1);
+        assert!(ease_in_out(0.2) < 0.2);
+        assert!(ease_in_out(0.8) > 0.8);
+        let outgoing = [1.0, 1.0, 1.0, 1.0];
+        let incoming = [0.5, -0.5, 0.5, -0.5];
+        let mixed = mix_crossfade(&outgoing, &incoming, 0, 2);
+        assert!((mixed[0] - 1.0).abs() < 0.000_1);
+        assert!((mixed[2] - 0.5).abs() < 0.000_1);
+        assert!((mixed[3] + 0.5).abs() < 0.000_1);
     }
 }

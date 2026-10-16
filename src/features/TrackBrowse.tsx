@@ -5,12 +5,12 @@ import { RowSpectrum } from "@/components/Visualizer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
-import { artistLabel, formatDuration, sourceLabel } from "@/lib/format"
+import { artistLabel, formatBytes, formatDuration, sourceLabel } from "@/lib/format"
 import type { Track } from "@/lib/types"
 
 type Mode = "list" | "cards" | "table"
 type Filter = "all" | "lyrics" | "cover" | "missing"
-type Sort = "manual" | "title" | "artist" | "album" | "duration" | "added"
+type Sort = "manual" | "title" | "artist" | "album" | "duration" | "added" | "size"
 
 const storageKey = "orfeus-listing"
 
@@ -70,6 +70,7 @@ export function TrackBrowse({
     if (sort === "manual") return filtered
     return [...filtered].sort((left, right) => {
       if (sort === "duration") return left.durationMs - right.durationMs
+      if (sort === "size") return (left.sizeBytes ?? 0) - (right.sizeBytes ?? 0)
       if (sort === "added") return right.addedAt - left.addedAt
       const a = sort === "artist" ? left.artist : sort === "album" ? left.album : left.title
       const b = sort === "artist" ? right.artist : sort === "album" ? right.album : right.title
@@ -100,6 +101,7 @@ export function TrackBrowse({
           <option value="artist">Artist</option>
           <option value="album">Album</option>
           <option value="duration">Duration</option>
+          <option value="size">File size</option>
           <option value="added">Recently added</option>
         </select>
         <label className="flex min-w-36 flex-1 items-center gap-2 text-sm text-muted-foreground">
@@ -141,6 +143,7 @@ export function TrackBrowse({
                 <th className="px-3 py-2 font-medium">Album</th>
                 <th className="px-3 py-2 font-medium">Source</th>
                 <th className="px-3 py-2 font-medium">Time</th>
+                <th className="px-3 py-2 font-medium">Size</th>
                 <th className="px-3 py-2 font-medium" />
               </tr>
             </thead>
@@ -167,6 +170,7 @@ export function TrackBrowse({
                   <td className="max-w-48 truncate px-3 py-2 text-sm text-muted-foreground">{track.album || "—"}</td>
                   <td className="max-w-56 truncate px-3 py-2 text-sm text-muted-foreground" title={track.path}>{sourceLabel(track)}</td>
                   <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums">{formatDuration(track.durationMs)}</td>
+                  <td className="px-3 py-2 text-sm text-muted-foreground tabular-nums">{formatBytes(track.sizeBytes)}</td>
                   <td className="rounded-r-xl px-3 py-2" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
                     <span className="flex items-center justify-end gap-1">
                       {actions?.(track)}
@@ -206,7 +210,10 @@ export function TrackBrowse({
                   <span className="block truncate text-xs text-white/45" title={track.path}>{sourceLabel(track)}</span>
                 </span>
                 <RowSpectrum active={currentId === track.id} className="h-8 w-24" />
-                <span className="text-sm text-muted-foreground tabular-nums">{formatDuration(track.durationMs)}</span>
+                <span className="text-right text-sm text-muted-foreground tabular-nums">
+                  {formatDuration(track.durationMs)}
+                  <span className="block">{formatBytes(track.sizeBytes)}</span>
+                </span>
                 {actions || (reorder && sort === "manual") ? (
                   <span className="flex items-center gap-1" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
                     {actions?.(track)}
@@ -244,7 +251,7 @@ export function TrackBrowse({
                 <span className="block truncate text-sm text-muted-foreground">{artistLabel(track.artist)}</span>
                 <span className="block truncate text-xs text-white/45" title={track.path}>{sourceLabel(track)}</span>
                 <RowSpectrum active={currentId === track.id} className="mt-2 h-8 w-full" />
-                <span className="text-sm text-muted-foreground tabular-nums">{formatDuration(track.durationMs)}</span>
+                <span className="text-sm text-muted-foreground tabular-nums">{formatDuration(track.durationMs)} · {formatBytes(track.sizeBytes)}</span>
               </div>
             </li>
           ))}

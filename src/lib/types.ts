@@ -15,6 +15,7 @@ export type Track = {
   missing: boolean
   addedAt: number
   shelfId: string
+  sizeBytes: number
 }
 
 export type ShelfKind = "music" | "podcast"

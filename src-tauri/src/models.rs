@@ -17,6 +17,7 @@ pub struct TrackDto {
     pub missing: bool,
     pub added_at: i64,
     pub shelf_id: String,
+    pub size_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]

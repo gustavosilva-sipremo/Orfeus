@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event"
 import { create } from "zustand"
 import * as api from "@/lib/api"
-import { nextLoop, nextRate } from "@/lib/format"
+import { nextCrossfade, nextLoop, nextRate } from "@/lib/format"
 import type { LoopMode, PlaybackState, QueueTrack, Track } from "@/lib/types"
 import { toQueue } from "@/lib/types"
 import { message } from "@/lib/utils"
@@ -23,6 +23,17 @@ const empty: PlaybackState = {
 }
 
 const volumeKey = "orfeus-volume"
+const fadeKey = "orfeus-crossfade"
+
+function readCrossfade() {
+  try {
+    const raw = Number(localStorage.getItem(fadeKey))
+    if (raw === 1.5 || raw === 3 || raw === 5) return raw
+  } catch {
+    return 0
+  }
+  return 0
+}
 
 function readVolume() {
   try {
@@ -51,6 +62,8 @@ type PlayerState = PlaybackState & {
   setStageOpen: (open: boolean) => void
   volume: number
   setVolume: (volume: number) => Promise<void>
+  crossfade: number
+  cycleCrossfade: () => Promise<void>
   syncTrack: (id: string) => void
 }
 
@@ -83,9 +96,12 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   playlistId: null,
   queue: [],
   volume: readVolume(),
+  crossfade: readCrossfade(),
   init: async () => {
     if (started) return
     started = true
+    const crossfade = readCrossfade()
+    set({ crossfade })
     if (!api.desktop()) {
       window.setInterval(() => {
         tick += 1
@@ -121,6 +137,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       return
     }
     void api.setVolume(get().volume)
+    void api.setCrossfade(get().crossfade)
     let heard = ""
     const unlistenState = await listen<PlaybackState>("playback://state", (event) => {
       const payload = event.payload
@@ -264,6 +281,17 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       return
     }
     set({ queue, title: track.title, artist: track.artist, coverPath: track.coverPath })
+  },
+  cycleCrossfade: async () => {
+    const crossfade = nextCrossfade(get().crossfade)
+    localStorage.setItem(fadeKey, String(crossfade))
+    set({ crossfade })
+    if (!api.desktop()) return
+    try {
+      await api.setCrossfade(crossfade)
+    } catch (error) {
+      set({ error: message(error) })
+    }
   },
   setVolume: async (volume) => {
     const next = Math.min(1, Math.max(0, volume))

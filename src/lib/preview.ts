@@ -16,6 +16,7 @@ export const previewTracks: Track[] = [
     missing: false,
     addedAt: 1,
     shelfId: "preview-shelf",
+    sizeBytes: 18_400_000,
   },
   {
     id: "preview-2",
@@ -32,6 +33,7 @@ export const previewTracks: Track[] = [
     missing: false,
     addedAt: 2,
     shelfId: "preview-shelf",
+    sizeBytes: 6_200_000,
   },
   {
     id: "preview-3",
@@ -48,6 +50,7 @@ export const previewTracks: Track[] = [
     missing: true,
     addedAt: 3,
     shelfId: "preview-shelf",
+    sizeBytes: 42_000_000,
   },
 ]
 

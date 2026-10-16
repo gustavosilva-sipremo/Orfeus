@@ -4,7 +4,7 @@ import { Cover } from "@/components/Cover"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { artistLabel, formatClock, loopLabel, rateLabel } from "@/lib/format"
+import { artistLabel, crossfadeLabel, formatClock, loopLabel, rateLabel } from "@/lib/format"
 import { usePlayer } from "@/stores/player"
 
 export function PlayerBar() {
@@ -23,6 +23,8 @@ export function PlayerBar() {
   const seek = usePlayer((state) => state.seek)
   const cycleLoop = usePlayer((state) => state.cycleLoop)
   const cycleRate = usePlayer((state) => state.cycleRate)
+  const crossfade = usePlayer((state) => state.crossfade)
+  const cycleCrossfade = usePlayer((state) => state.cycleCrossfade)
   const setStageOpen = usePlayer((state) => state.setStageOpen)
   const [scrub, setScrub] = useState<number | null>(null)
   const shown = scrub ?? (duration ? position / duration : 0)
@@ -84,6 +86,14 @@ export function PlayerBar() {
               </Button>
             </TooltipTrigger>
             <TooltipContent>Speed: 1×, 2×, and ½×</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="sm" onClick={() => void cycleCrossfade()} className="w-16">
+                {crossfadeLabel(crossfade)}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Ease in and out between tracks: off, 1.5s, 3s, or 5s</TooltipContent>
           </Tooltip>
           <Button variant="secondary" size="sm" onClick={() => setStageOpen(true)}>
             Stage

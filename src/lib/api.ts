@@ -204,6 +204,10 @@ export function setLoop(mode: LoopMode) {
   return call<void>("set_loop", { mode })
 }
 
+export function setCrossfade(seconds: number) {
+  return call<void>("set_crossfade", { seconds })
+}
+
 export function setVolume(volume: number) {
   return call<void>("set_volume", { volume })
 }

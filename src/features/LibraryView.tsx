@@ -9,6 +9,7 @@ import { TrackBrowse } from "@/features/TrackBrowse"
 import { YouTubeDialog } from "@/features/YouTubeDialog"
 import * as api from "@/lib/api"
 import type { Track, WatchedFolder } from "@/lib/types"
+import { tally } from "@/lib/format"
 import { message } from "@/lib/utils"
 import { useLibrary } from "@/stores/library"
 import { usePlayer } from "@/stores/player"
@@ -153,7 +154,7 @@ export function LibraryView() {
       <header className="flex flex-wrap items-center gap-2 px-4 py-3 sm:px-6 sm:py-4">
         <div className="mr-auto min-w-0">
           <h2 className="serif truncate text-2xl sm:text-3xl">{shelfName}</h2>
-          <p className="text-base text-muted-foreground">{ready ? `${tracks.length} tracks` : "Opening the library…"}</p>
+          <p className="text-base text-muted-foreground">{ready ? `${tracks.length} tracks · ${tally(tracks)}` : "Opening the library…"}</p>
         </div>
         <div className="flex rounded-md border border-[#3a3a3a] bg-[#1c1c1c] p-1">
           <button type="button" className={`cursor-pointer rounded px-3 py-1.5 text-sm ${playMode === "one" ? "bg-white text-black" : "text-white"}`} onClick={() => setMode("one")}>One track</button>

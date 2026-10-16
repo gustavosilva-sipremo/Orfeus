@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input"
 import { TrackBrowse } from "@/features/TrackBrowse"
 import * as api from "@/lib/api"
-import { artistLabel, formatDuration, loopLabel, nextLoop, sourceLabel } from "@/lib/format"
+import { artistLabel, formatDuration, loopLabel, nextLoop, sourceLabel, tally } from "@/lib/format"
 import type { Track } from "@/lib/types"
 import { message } from "@/lib/utils"
 import { useLibrary } from "@/stores/library"
@@ -89,7 +89,7 @@ export function PlaylistView({ id }: { id: string }) {
             }}
             className="serif mt-1 h-auto border-transparent bg-transparent px-0 text-4xl focus-visible:ring-0"
           />
-          <p className="text-base text-muted-foreground">{ordered.length} tracks</p>
+          <p className="text-base text-muted-foreground">{ordered.length} tracks · {tally(ordered)}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => void playTracks(ordered, 0, playlist.loopMode, playlist.id)} disabled={!ordered.length}>

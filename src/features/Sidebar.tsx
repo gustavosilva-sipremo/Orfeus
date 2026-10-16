@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import * as api from "@/lib/api"
+import { tally } from "@/lib/format"
 import { cn, message } from "@/lib/utils"
 import { version } from "../../package.json"
 import { useLibrary } from "@/stores/library"
@@ -39,6 +40,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const view = useLibrary((state) => state.view)
   const shelves = useLibrary((state) => state.shelves)
   const playlists = useLibrary((state) => state.playlists)
+  const tracks = useLibrary((state) => state.tracks)
   const trashCount = useLibrary((state) => state.trash.length)
   const setView = useLibrary((state) => state.setView)
   const createPlaylist = useLibrary((state) => state.createPlaylist)
@@ -140,6 +142,11 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           {playlists.length === 0 ? <p className="px-3 py-2 text-sm text-muted-foreground">No playlists yet.</p> : null}
           {playlists.map((playlist) => {
             const active = view.kind === "playlist" && view.id === playlist.id
+            const members = playlist.trackIds.flatMap((id) => {
+              const track = tracks.find((item) => item.id === id)
+              return track ? [track] : []
+            })
+            const summary = `${members.length} tracks · ${tally(members)}`
             return (
               <button
                 key={playlist.id}
@@ -153,7 +160,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                 <Cover path={playlist.coverPath} className="size-10 rounded" />
                 <span className="min-w-0">
                   <span className="block truncate text-base">{playlist.name}</span>
-                  <span className="text-sm text-muted-foreground">{playlist.trackIds.length} tracks</span>
+                  <span className="block truncate text-sm text-muted-foreground" title={summary}>{summary}</span>
                 </span>
               </button>
             )
