@@ -81,6 +81,22 @@ export function deleteTrack(id: string) {
   return call<void>("delete_track", { id })
 }
 
+export function listTrash() {
+  return call<Track[]>("list_trash")
+}
+
+export function restoreTrack(id: string) {
+  return call<void>("restore_track", { id })
+}
+
+export function purgeTrack(id: string) {
+  return call<void>("purge_track", { id })
+}
+
+export function ensureFolder(path: string) {
+  return call<string>("ensure_folder", { path })
+}
+
 export function createPlaylist(name: string) {
   return call<Playlist>("create_playlist", { name })
 }
@@ -194,6 +210,10 @@ export function setVolume(volume: number) {
 
 export function setTrackGain(gain: number) {
   return call<void>("set_track_gain", { gain })
+}
+
+export function stop() {
+  return call<void>("stop")
 }
 
 export function next() {

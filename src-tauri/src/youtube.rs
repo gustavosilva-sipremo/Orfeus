@@ -114,9 +114,15 @@ pub fn youtube_defaults(app: AppHandle, state: State<AppState>) -> Result<Youtub
     let audio = first_watched(&conn)?.unwrap_or_else(|| system_audio(&app).to_string_lossy().to_string());
     let video = system_video(&app).to_string_lossy().to_string();
     Ok(YoutubeDefaults {
-        audio_dir: audio,
-        video_dir: video,
+        audio_dir: ready_dir(&audio),
+        video_dir: ready_dir(&video),
     })
+}
+
+fn ready_dir(path: &str) -> String {
+    export::usable_directory(Path::new(path))
+        .map(|dir| dir.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string())
 }
 
 #[tauri::command]
@@ -164,7 +170,9 @@ pub fn youtube_reveal(path: String) -> Result<(), String> {
     if folder.as_os_str().is_empty() {
         return Err("Choose a folder first.".into());
     }
-    fs::create_dir_all(&folder).map_err(|err| err.to_string())?;
+    let Some(folder) = export::usable_directory(&folder) else {
+        return Err("That folder could not be created.".into());
+    };
     export::open_folder(&folder)
 }
 

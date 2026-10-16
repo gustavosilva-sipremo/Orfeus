@@ -58,6 +58,7 @@ fn migrate(conn: &Connection) -> Result<(), String> {
     ensure_column(conn, "tracks", "gain", "REAL NOT NULL DEFAULT 1")?;
     ensure_column(conn, "tracks", "sort_index", "INTEGER NOT NULL DEFAULT 0")?;
     ensure_column(conn, "tracks", "shelf_id", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(conn, "tracks", "deleted_at", "INTEGER")?;
     backfill_sort_index(conn)?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS watched_folders (

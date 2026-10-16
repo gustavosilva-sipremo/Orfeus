@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { EditorSheet } from "@/features/EditorSheet"
 import { LibraryView } from "@/features/LibraryView"
 import { PlaylistView } from "@/features/PlaylistView"
+import { TrashView } from "@/features/TrashView"
 import { Sidebar } from "@/features/Sidebar"
 import * as api from "@/lib/api"
 import { message as errorText } from "@/lib/utils"
@@ -140,7 +141,7 @@ export function App() {
               <span className="serif text-xl italic">Orfeus</span>
             </div>
             <div className="min-h-0 flex-1">
-              {view.kind === "library" ? <LibraryView /> : <PlaylistView id={view.id} />}
+              {view.kind === "library" ? <LibraryView /> : view.kind === "trash" ? <TrashView /> : <PlaylistView id={view.id} />}
             </div>
           </main>
         </div>

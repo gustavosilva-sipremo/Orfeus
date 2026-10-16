@@ -324,7 +324,7 @@ function TrackMenu({
         <DropdownMenuItem onSelect={onVolume}>Track volume</DropdownMenuItem>
         <DropdownMenuItem onSelect={onAdd}>Add to playlist</DropdownMenuItem>
         <DropdownMenuItem onSelect={onExport}>Export</DropdownMenuItem>
-        <DropdownMenuItem onSelect={onDelete}>Remove from library</DropdownMenuItem>
+        <DropdownMenuItem onSelect={onDelete}>Move to Trash</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )

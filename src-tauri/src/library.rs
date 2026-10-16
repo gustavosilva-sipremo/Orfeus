@@ -220,37 +220,30 @@ pub fn update_track(state: State<AppState>, input: UpdateTrack) -> Result<TrackD
 #[tauri::command]
 pub fn delete_track(state: State<AppState>, id: String) -> Result<(), String> {
     let conn = state.db.lock().map_err(|err| err.to_string())?;
-    let Some(track) = query_track(&conn, &id)? else {
-        return Ok(());
-    };
-    let shared_file: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM tracks WHERE path = ?1 AND id != ?2",
-            params![track.path, id],
-            |row| row.get(0),
-        )
-        .map_err(|err| err.to_string())?;
-    conn.execute(
-        "INSERT INTO dismissed_paths (path) VALUES (?1) ON CONFLICT(path) DO NOTHING",
-        [&track.path],
-    )
-    .map_err(|err| err.to_string())?;
-    conn.execute("DELETE FROM tracks WHERE id = ?1", [&id])
-        .map_err(|err| err.to_string())?;
-    if let Some(cover) = track.cover_path {
-        let cover_shared: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM tracks WHERE cover_path = ?1",
-                [&cover],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
-        if cover_shared == 0 {
-            util::remove_inside(&state.data_dir, &cover);
-        }
-    }
-    if track.storage == "owned" && shared_file == 0 {
-        util::remove_inside(&state.data_dir, &track.path);
+    trash_track(&conn, &id)
+}
+
+#[tauri::command]
+pub fn list_trash(state: State<AppState>) -> Result<Vec<TrackDto>, String> {
+    let conn = state.db.lock().map_err(|err| err.to_string())?;
+    refresh_missing(&conn)?;
+    query_trash(&conn)
+}
+
+#[tauri::command]
+pub fn restore_track(state: State<AppState>, id: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|err| err.to_string())?;
+    restore_trashed(&conn, &id)
+}
+
+#[tauri::command]
+pub fn purge_track(state: State<AppState>, id: String) -> Result<(), String> {
+    let playing = state.audio.current_track_id();
+    let conn = state.db.lock().map_err(|err| err.to_string())?;
+    purge_trashed(&conn, &state.data_dir, &id)?;
+    drop(conn);
+    if playing == id {
+        let _ = state.audio.stop();
     }
     Ok(())
 }
@@ -362,7 +355,7 @@ pub fn add_to_playlist(
     for track_id in track_ids {
         let exists = conn
             .query_row(
-                "SELECT 1 FROM tracks WHERE id = ?1",
+                "SELECT 1 FROM tracks WHERE id = ?1 AND deleted_at IS NULL",
                 [&track_id],
                 |_| Ok(()),
             )
@@ -418,7 +411,11 @@ pub fn move_playlist_track(
     direction: i32,
 ) -> Result<PlaylistDto, String> {
     let conn = state.db.lock().map_err(|err| err.to_string())?;
-    let mut ids = track_ids_of(&conn, &playlist_id)?;
+    let trashed = trashed_ids(&conn)?;
+    let mut ids = track_ids_of(&conn, &playlist_id)?
+        .into_iter()
+        .filter(|id| !trashed.contains(id))
+        .collect::<Vec<_>>();
     let Some(index) = ids.iter().position(|id| id == &track_id) else {
         return query_playlist(&conn, &playlist_id)?.ok_or_else(|| "Playlist not found.".into());
     };
@@ -434,13 +431,135 @@ pub fn query_tracks(conn: &Connection) -> Result<Vec<TrackDto>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT id, path, storage, title, artist, album, duration_ms, cover_path, lyrics, synced_lyrics, gain, missing, added_at, shelf_id
-             FROM tracks ORDER BY sort_index ASC, added_at DESC, title COLLATE NOCASE",
+             FROM tracks WHERE deleted_at IS NULL ORDER BY sort_index ASC, added_at DESC, title COLLATE NOCASE",
         )
         .map_err(|err| err.to_string())?;
     let rows = stmt
         .query_map([], map_track)
         .map_err(|err| err.to_string())?;
     rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())
+}
+
+fn query_trash(conn: &Connection) -> Result<Vec<TrackDto>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, path, storage, title, artist, album, duration_ms, cover_path, lyrics, synced_lyrics, gain, missing, added_at, shelf_id
+             FROM tracks WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, title COLLATE NOCASE",
+        )
+        .map_err(|err| err.to_string())?;
+    let rows = stmt
+        .query_map([], map_track)
+        .map_err(|err| err.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|err| err.to_string())
+}
+
+fn trash_track(conn: &Connection, id: &str) -> Result<(), String> {
+    let Some(track) = query_track(conn, id)? else {
+        return Ok(());
+    };
+    if track_deleted(conn, id)? {
+        return Ok(());
+    }
+    conn.execute(
+        "UPDATE tracks SET deleted_at = ?1 WHERE id = ?2",
+        params![now_secs(), id],
+    )
+    .map_err(|err| err.to_string())?;
+    conn.execute(
+        "INSERT INTO dismissed_paths (path) VALUES (?1) ON CONFLICT(path) DO NOTHING",
+        [&track.path],
+    )
+    .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+fn restore_trashed(conn: &Connection, id: &str) -> Result<(), String> {
+    let Some(track) = query_track(conn, id)? else {
+        return Ok(());
+    };
+    if !track_deleted(conn, id)? {
+        return Ok(());
+    }
+    let shelf = if shelf_exists(conn, &track.shelf_id)? {
+        track.shelf_id
+    } else {
+        resolve_shelf(conn, None)?
+    };
+    conn.execute(
+        "UPDATE tracks SET deleted_at = NULL, shelf_id = ?1 WHERE id = ?2",
+        params![shelf, id],
+    )
+    .map_err(|err| err.to_string())?;
+    conn.execute("DELETE FROM dismissed_paths WHERE path = ?1", [&track.path])
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+fn purge_trashed(conn: &Connection, data_dir: &Path, id: &str) -> Result<(), String> {
+    let Some(track) = query_track(conn, id)? else {
+        return Ok(());
+    };
+    let shared_file: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM tracks WHERE path = ?1 AND id != ?2",
+            params![track.path, id],
+            |row| row.get(0),
+        )
+        .map_err(|err| err.to_string())?;
+    conn.execute(
+        "INSERT INTO dismissed_paths (path) VALUES (?1) ON CONFLICT(path) DO NOTHING",
+        [&track.path],
+    )
+    .map_err(|err| err.to_string())?;
+    conn.execute("DELETE FROM tracks WHERE id = ?1", [id])
+        .map_err(|err| err.to_string())?;
+    if let Some(cover) = track.cover_path {
+        let cover_shared: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM tracks WHERE cover_path = ?1",
+                [&cover],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        if cover_shared == 0 {
+            util::remove_inside(data_dir, &cover);
+        }
+    }
+    if shared_file == 0 {
+        delete_audio_file(&track.path)?;
+    }
+    Ok(())
+}
+
+fn delete_audio_file(path: &str) -> Result<(), String> {
+    let file = Path::new(path);
+    if !file.exists() {
+        return Ok(());
+    }
+    if !file.is_file() || !util::is_audio_path(file) {
+        return Err("That track does not point at an audio file.".into());
+    }
+    fs::remove_file(file).map_err(|err| format!("Could not delete the file: {err}"))
+}
+
+fn track_deleted(conn: &Connection, id: &str) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT deleted_at IS NOT NULL FROM tracks WHERE id = ?1",
+        [id],
+        |row| row.get(0),
+    )
+    .map_err(|err| err.to_string())
+}
+
+fn shelf_exists(conn: &Connection, id: &str) -> Result<bool, String> {
+    if id.is_empty() {
+        return Ok(false);
+    }
+    conn.query_row("SELECT 1 FROM shelves WHERE id = ?1", [id], |_| Ok(()))
+        .optional()
+        .map(|found| found.is_some())
         .map_err(|err| err.to_string())
 }
 
@@ -477,7 +596,7 @@ pub fn query_playlists(conn: &Connection) -> Result<Vec<PlaylistDto>, String> {
     ids.into_iter()
         .map(|(id, name, cover_path, loop_mode, created_at)| {
             Ok(PlaylistDto {
-                track_ids: track_ids_of(conn, &id)?,
+                track_ids: visible_track_ids(conn, &id)?,
                 id,
                 name,
                 cover_path,
@@ -509,7 +628,7 @@ pub fn query_playlist(conn: &Connection, id: &str) -> Result<Option<PlaylistDto>
         return Ok(None);
     };
     Ok(Some(PlaylistDto {
-        track_ids: track_ids_of(conn, &id)?,
+        track_ids: visible_track_ids(conn, &id)?,
         id,
         name,
         cover_path,
@@ -520,7 +639,7 @@ pub fn query_playlist(conn: &Connection, id: &str) -> Result<Option<PlaylistDto>
 
 fn collapse_duplicate_audio(conn: &Connection, data_dir: &Path) -> Result<(), String> {
     let mut stmt = conn
-        .prepare("SELECT id, path FROM tracks WHERE content_hash IS NULL OR content_hash = ''")
+        .prepare("SELECT id, path FROM tracks WHERE deleted_at IS NULL AND (content_hash IS NULL OR content_hash = '')")
         .map_err(|err| err.to_string())?;
     let pending = stmt
         .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
@@ -541,7 +660,7 @@ fn collapse_duplicate_audio(conn: &Connection, data_dir: &Path) -> Result<(), St
     let mut groups = conn
         .prepare(
             "SELECT content_hash FROM tracks
-             WHERE content_hash IS NOT NULL AND content_hash != ''
+             WHERE deleted_at IS NULL AND content_hash IS NOT NULL AND content_hash != ''
              GROUP BY content_hash HAVING COUNT(*) > 1",
         )
         .map_err(|err| err.to_string())?;
@@ -554,7 +673,7 @@ fn collapse_duplicate_audio(conn: &Connection, data_dir: &Path) -> Result<(), St
     for hash in hashes {
         let mut rows = conn
             .prepare(
-                "SELECT id, path, storage FROM tracks WHERE content_hash = ?1 ORDER BY added_at ASC",
+                "SELECT id, path, storage FROM tracks WHERE deleted_at IS NULL AND content_hash = ?1 ORDER BY added_at ASC",
             )
             .map_err(|err| err.to_string())?;
         let tracks = rows
@@ -613,7 +732,7 @@ fn hash_file(path: &Path) -> Result<String, String> {
 fn find_track_for_hash(conn: &Connection, hash: &str) -> Result<Option<String>, String> {
     if let Some(existing) = conn
         .query_row(
-            "SELECT id FROM tracks WHERE content_hash = ?1 LIMIT 1",
+            "SELECT id FROM tracks WHERE deleted_at IS NULL AND content_hash = ?1 LIMIT 1",
             [hash],
             |row| row.get::<_, String>(0),
         )
@@ -623,7 +742,7 @@ fn find_track_for_hash(conn: &Connection, hash: &str) -> Result<Option<String>, 
         return Ok(Some(existing));
     }
     let mut stmt = conn
-        .prepare("SELECT id, path FROM tracks WHERE content_hash IS NULL OR content_hash = ''")
+        .prepare("SELECT id, path FROM tracks WHERE deleted_at IS NULL AND (content_hash IS NULL OR content_hash = '')")
         .map_err(|err| err.to_string())?;
     let pending = stmt
         .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
@@ -1009,6 +1128,25 @@ fn shelf_kind(kind: &str) -> &'static str {
     if kind == "podcast" { "podcast" } else { "music" }
 }
 
+fn visible_track_ids(conn: &Connection, playlist_id: &str) -> Result<Vec<String>, String> {
+    let trashed = trashed_ids(conn)?;
+    Ok(track_ids_of(conn, playlist_id)?
+        .into_iter()
+        .filter(|id| !trashed.contains(id))
+        .collect())
+}
+
+fn trashed_ids(conn: &Connection) -> Result<HashSet<String>, String> {
+    let mut stmt = conn
+        .prepare("SELECT id FROM tracks WHERE deleted_at IS NOT NULL")
+        .map_err(|err| err.to_string())?;
+    let rows = stmt
+        .query_map([], |row| row.get(0))
+        .map_err(|err| err.to_string())?;
+    rows.collect::<Result<HashSet<_>, _>>()
+        .map_err(|err| err.to_string())
+}
+
 fn track_ids_of(conn: &Connection, playlist_id: &str) -> Result<Vec<String>, String> {
     let mut stmt = conn
         .prepare(
@@ -1022,11 +1160,43 @@ fn track_ids_of(conn: &Connection, playlist_id: &str) -> Result<Vec<String>, Str
         .map_err(|err| err.to_string())
 }
 
+fn merge_playlist_ids(previous: &[String], incoming: &[String], trashed: &HashSet<String>) -> Vec<String> {
+    let active = incoming
+        .iter()
+        .filter(|id| !trashed.contains(*id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut pending = active.into_iter();
+    let mut merged = Vec::new();
+    let mut seen = HashSet::new();
+    for id in previous {
+        let next = if trashed.contains(id) {
+            Some(id.clone())
+        } else {
+            pending.next()
+        };
+        if let Some(id) = next {
+            if seen.insert(id.clone()) {
+                merged.push(id);
+            }
+        }
+    }
+    for id in pending {
+        if seen.insert(id.clone()) {
+            merged.push(id);
+        }
+    }
+    merged
+}
+
 fn replace_playlist_tracks(
     conn: &Connection,
     playlist_id: &str,
     track_ids: &[String],
 ) -> Result<(), String> {
+    let previous = track_ids_of(conn, playlist_id)?;
+    let trashed = trashed_ids(conn)?;
+    let track_ids = merge_playlist_ids(&previous, track_ids, &trashed);
     conn.execute(
         "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
         [playlist_id],
@@ -1194,5 +1364,39 @@ mod tests {
         assert!(!import_one(&conn, &root, &audio, false, "").unwrap());
         assert!(import_one(&conn, &root, &audio, true, "").unwrap());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn removing_a_track_keeps_the_file_until_it_is_deleted_from_the_trash() {
+        let root = std::env::temp_dir().join(format!("orfeus-trash-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let conn = crate::db::open(&root.join("library.db")).unwrap();
+        let audio = root.join("song.mp3");
+        fs::write(&audio, b"audio").unwrap();
+        assert!(import_one(&conn, &root, &audio, true, "").unwrap());
+        let id: String = conn.query_row("SELECT id FROM tracks", [], |row| row.get(0)).unwrap();
+        trash_track(&conn, &id).unwrap();
+        assert!(query_tracks(&conn).unwrap().is_empty());
+        assert_eq!(query_trash(&conn).unwrap().len(), 1);
+        assert!(audio.is_file());
+        assert!(!import_one(&conn, &root, &audio, false, "").unwrap());
+        restore_trashed(&conn, &id).unwrap();
+        assert_eq!(query_tracks(&conn).unwrap().len(), 1);
+        assert!(query_trash(&conn).unwrap().is_empty());
+        trash_track(&conn, &id).unwrap();
+        purge_trashed(&conn, &root, &id).unwrap();
+        assert!(query_tracks(&conn).unwrap().is_empty());
+        assert!(query_trash(&conn).unwrap().is_empty());
+        assert!(!audio.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_trashed_playlist_track_stays_in_place_until_restore() {
+        let previous = vec!["a".into(), "trash".into(), "b".into()];
+        let mut trashed = HashSet::new();
+        trashed.insert("trash".into());
+        let merged = merge_playlist_ids(&previous, &["b".into(), "a".into()], &trashed);
+        assert_eq!(merged, vec!["b".to_string(), "trash".to_string(), "a".to_string()]);
     }
 }

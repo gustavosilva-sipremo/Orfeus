@@ -80,7 +80,8 @@ export function YouTubeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   }, [open])
 
   async function chooseDir(title: string, current: string, key: string, setDir: (path: string) => void) {
-    const picked = await chooseDirectory({ directory: true, title, defaultPath: current || undefined })
+    const ready = current && api.desktop() ? await api.ensureFolder(current).catch(() => "") : current
+    const picked = await chooseDirectory({ directory: true, title, defaultPath: ready || undefined })
     if (typeof picked !== "string") return
     remember(key, picked, setDir)
   }

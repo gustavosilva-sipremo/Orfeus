@@ -1,4 +1,4 @@
-import { FolderArchive, Music, Plus, Podcast, X } from "lucide-react"
+import { FolderArchive, Music, Plus, Podcast, Trash2, X } from "lucide-react"
 import { useState } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { Cover } from "@/components/Cover"
@@ -39,6 +39,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const view = useLibrary((state) => state.view)
   const shelves = useLibrary((state) => state.shelves)
   const playlists = useLibrary((state) => state.playlists)
+  const trashCount = useLibrary((state) => state.trash.length)
   const setView = useLibrary((state) => state.setView)
   const createPlaylist = useLibrary((state) => state.createPlaylist)
   const createShelf = useLibrary((state) => state.createShelf)
@@ -115,6 +116,20 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             </div>
           )
         })}
+        <button
+          type="button"
+          className={cn("mt-3 flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-left", view.kind === "trash" && "bg-accent")}
+          onClick={() => {
+            setView({ kind: "trash" })
+            onNavigate?.()
+          }}
+        >
+          <Trash2 className="size-5 text-primary" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-base">Trash</span>
+            <span className="text-sm text-muted-foreground">{trashCount === 1 ? "1 track" : `${trashCount} tracks`}</span>
+          </span>
+        </button>
         <div className="mt-4 flex items-center justify-between px-3">
           <span className="text-xs tracking-[0.22em] text-muted-foreground uppercase">Playlists</span>
           <Button variant="ghost" size="icon" onClick={() => setOpenNew(true)} aria-label="New playlist">

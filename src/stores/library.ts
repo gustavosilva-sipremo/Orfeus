@@ -5,16 +5,17 @@ import type { LoopMode, Playlist, SearchReport, Shelf, Track } from "@/lib/types
 import { message } from "@/lib/utils"
 import { usePlayer } from "@/stores/player"
 
-type View = { kind: "library"; id: string } | { kind: "playlist"; id: string }
+type View = { kind: "library"; id: string } | { kind: "playlist"; id: string } | { kind: "trash" }
 
 function libraryView(shelves: Shelf[], current?: View): View {
-  if (current?.kind === "playlist") return current
+  if (current?.kind === "playlist" || current?.kind === "trash") return current
   if (current?.kind === "library" && shelves.some((shelf) => shelf.id === current.id)) return current
   return { kind: "library", id: shelves[0]?.id ?? "" }
 }
 
 type LibraryState = {
   tracks: Track[]
+  trash: Track[]
   shelves: Shelf[]
   playlists: Playlist[]
   ready: boolean
@@ -35,6 +36,8 @@ type LibraryState = {
   importPaths: (paths: string[], recursive?: boolean, watch?: boolean) => Promise<void>
   updateTrack: (input: Parameters<typeof api.updateTrack>[0]) => Promise<void>
   deleteTrack: (id: string) => Promise<void>
+  restoreTrack: (id: string) => Promise<void>
+  purgeTrack: (id: string) => Promise<void>
   reorderTracks: (ids: string[]) => Promise<void>
   createShelf: (name: string) => Promise<void>
   setShelfKind: (id: string, kind: Shelf["kind"]) => Promise<void>
@@ -60,6 +63,7 @@ function replacePlaylist(playlists: Playlist[], playlist: Playlist) {
 
 export const useLibrary = create<LibraryState>((set, get) => ({
   tracks: [],
+  trash: [],
   shelves: [],
   playlists: [],
   ready: false,
@@ -87,8 +91,8 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   refresh: async () => {
     if (!api.desktop()) return
     try {
-      const [tracks, playlists, shelves] = await Promise.all([api.listTracks(), api.listPlaylists(), api.listShelves()])
-      set({ tracks, playlists, shelves, view: libraryView(shelves, get().view), ready: true, error: null })
+      const [tracks, playlists, shelves, trash] = await Promise.all([api.listTracks(), api.listPlaylists(), api.listShelves(), api.listTrash()])
+      set({ tracks, playlists, shelves, trash, view: libraryView(shelves, get().view), ready: true, error: null })
     } catch (error) {
       set({ ready: true, error: message(error) })
     }
@@ -105,7 +109,8 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     }
     set({ busy: "Importing…", error: null })
     try {
-      const shelfId = get().view.kind === "library" ? get().view.id : get().shelves[0]?.id
+      const view = get().view
+      const shelfId = view.kind === "library" ? view.id : get().shelves[0]?.id
       const report = await api.importPaths(paths, recursive, watch, shelfId)
       await get().refresh()
       set({
@@ -149,16 +154,39 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   },
   deleteTrack: async (id) => {
     if (!api.desktop()) {
+      const track = get().tracks.find((item) => item.id === id)
       set({
-        tracks: get().tracks.filter((track) => track.id !== id),
-        playlists: get().playlists.map((playlist) => ({
-          ...playlist,
-          trackIds: playlist.trackIds.filter((trackId) => trackId !== id),
-        })),
+        tracks: get().tracks.filter((item) => item.id !== id),
+        trash: track ? [track, ...get().trash.filter((item) => item.id !== id)] : get().trash,
+        notice: "Moved to Trash.",
       })
       return
     }
     await api.deleteTrack(id)
+    await get().refresh()
+    set({ notice: "Moved to Trash." })
+  },
+  restoreTrack: async (id) => {
+    if (!api.desktop()) {
+      const track = get().trash.find((item) => item.id === id)
+      set({
+        trash: get().trash.filter((item) => item.id !== id),
+        tracks: track ? [track, ...get().tracks.filter((item) => item.id !== id)] : get().tracks,
+        notice: "Restored to the library.",
+      })
+      return
+    }
+    await api.restoreTrack(id)
+    await get().refresh()
+    set({ notice: "Restored to the library." })
+  },
+  purgeTrack: async (id) => {
+    if (!api.desktop()) {
+      set({ trash: get().trash.filter((item) => item.id !== id) })
+      return
+    }
+    await api.purgeTrack(id)
+    if (usePlayer.getState().trackId === id) await api.stop().catch(() => undefined)
     await get().refresh()
   },
   reorderTracks: async (ids) => {
