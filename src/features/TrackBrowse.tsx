@@ -244,7 +244,7 @@ export function TrackBrowse({
         </ul>
       )}
       {menu && contextActions ? (
-        <div className="glass-strong fixed z-50 min-w-48 rounded-md p-1" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
+        <div className="menu-panel fixed z-50 min-w-48 rounded-md p-1" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
           {contextActions(menu.track).map((action) => (
             <button key={action.label} type="button" className="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-left text-base hover:bg-accent" onClick={() => { action.onSelect(); setMenu(null) }}>
               {action.icon}

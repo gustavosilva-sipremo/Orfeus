@@ -23,14 +23,13 @@ export function LightMenu({
   className?: string
 }) {
   const index = options.findIndex((option) => option.value === value)
-  const count = Math.max(options.length, 1)
 
   return (
     <div
       role="radiogroup"
       aria-label={label}
       className={cn("light-menu", className)}
-      style={{ "--menu-accent": accent, "--count": count } as CSSProperties}
+      style={{ "--menu-accent": accent, "--menu-index": Math.max(index, 0) } as CSSProperties}
     >
       {options.map((option) => {
         const selected = option.value === value
@@ -51,7 +50,7 @@ export function LightMenu({
         )
       })}
       <div className="light-menu-rail" aria-hidden>
-        <div className="light-menu-glider" style={{ transform: `translateY(${Math.max(index, 0) * 100}%)`, opacity: index >= 0 ? 1 : 0 }} />
+        <div className="light-menu-glider" style={{ opacity: index >= 0 ? 1 : 0 }} />
       </div>
     </div>
   )
