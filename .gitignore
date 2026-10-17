@@ -4,4 +4,10 @@ src-tauri/target
 .DS_Store
 *.log
 .cursor/
-Orfeus_1.5.2_x64-setup.exe
+
+# Installers and bundled runtimes. These are build output and are too large to push.
+Orfeus_*-setup.exe
+*.AppImage
+*.msix
+*.msi
+*.dmg
