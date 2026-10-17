@@ -4,6 +4,8 @@ src-tauri/target
 .DS_Store
 *.log
 .cursor/
+ffmpeg/
+src-tauri/windows/cache/
 
 # Installers and bundled runtimes. These are build output and are too large to push.
 Orfeus_*-setup.exe

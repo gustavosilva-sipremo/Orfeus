@@ -120,7 +120,7 @@ fn burn(app: &AppHandle, dir: &Path, kind: &str, device: &str, jobs: &[Job]) -> 
         };
         let source = if kind == "audio" {
             let wav = dir.join(format!("{index:02}.wav"));
-            let status = Command::new("ffmpeg")
+            let status = crate::util::command("ffmpeg")
                 .args(["-y", "-i", &job.path, "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le"])
                 .arg(&wav)
                 .status()
@@ -160,7 +160,7 @@ fn burn(app: &AppHandle, dir: &Path, kind: &str, device: &str, jobs: &[Job]) -> 
 }
 
 fn run_xorriso(args: &[String]) -> Result<(), String> {
-    let output = Command::new("xorriso").args(args).output().map_err(|_| "Install xorriso to burn a disc.".to_string())?;
+    let output = crate::util::command("xorriso").args(args).output().map_err(|_| "Install xorriso to burn a disc.".to_string())?;
     if output.status.success() {
         return Ok(());
     }
@@ -267,7 +267,7 @@ fn drives_from_windows_json(text: &str) -> Result<Vec<OpticalDrive>, String> {
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub fn list_drives() -> Result<Vec<OpticalDrive>, String> {
-    let output = Command::new("powershell.exe")
+    let output = crate::util::command("powershell.exe")
         .args([
             "-NoProfile",
             "-NonInteractive",

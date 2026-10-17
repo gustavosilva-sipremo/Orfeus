@@ -1,5 +1,35 @@
+use std::ffi::OsStr;
 use std::path::{Component, Path};
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+pub fn command(program: impl AsRef<OsStr>) -> Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let mut command = Command::new(program);
+        command.creation_flags(0x08000000);
+        if let Some(dir) = bundled_runtime_dir() {
+            let mut path = std::ffi::OsString::from(&dir);
+            path.push(";");
+            if let Some(current) = std::env::var_os("PATH") {
+                path.push(current);
+            }
+            command.env("PATH", path);
+        }
+        command
+    }
+    #[cfg(not(windows))]
+    {
+        Command::new(program)
+    }
+}
+
+#[cfg(windows)]
+fn bundled_runtime_dir() -> Option<std::path::PathBuf> {
+    let dir = std::env::current_exe().ok()?.parent()?.join("runtime");
+    dir.join("ffmpeg.exe").is_file().then_some(dir)
+}
 
 pub fn now_secs() -> i64 {
     SystemTime::now()

@@ -285,10 +285,44 @@ struct Runtime {
 
 fn python_launchers() -> Vec<Vec<String>> {
     if cfg!(windows) {
-        vec![vec!["py".into(), "-3".into()], vec!["python".into()], vec!["python3".into()]]
+        let mut list = vec![vec!["py".into(), "-3".into()], vec!["python".into()], vec!["python3".into()]];
+        list.extend(windows_python_candidates());
+        list
     } else {
         vec![vec!["python3".into()], vec!["python".into()]]
     }
+}
+
+#[cfg(windows)]
+fn windows_python_candidates() -> Vec<Vec<String>> {
+    let Ok(local) = std::env::var("LOCALAPPDATA") else {
+        return Vec::new();
+    };
+    let root = PathBuf::from(local).join("Programs").join("Python");
+    let mut list = Vec::new();
+    let launcher = root.join("Launcher").join("py.exe");
+    if launcher.is_file() {
+        list.push(vec![launcher.to_string_lossy().into_owned(), "-3".into()]);
+    }
+    let mut installs = Vec::new();
+    if let Ok(entries) = fs::read_dir(&root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() && path.join("python.exe").is_file() {
+                installs.push(path.join("python.exe"));
+            }
+        }
+    }
+    installs.sort();
+    for exe in installs.into_iter().rev() {
+        list.push(vec![exe.to_string_lossy().into_owned()]);
+    }
+    list
+}
+
+#[cfg(not(windows))]
+fn windows_python_candidates() -> Vec<Vec<String>> {
+    Vec::new()
 }
 
 fn prepare_python(command: &mut Command) {
@@ -301,7 +335,7 @@ fn prepare_python(command: &mut Command) {
 }
 
 fn python_command(argv: &[String]) -> Command {
-    let mut command = Command::new(&argv[0]);
+    let mut command = crate::util::command(&argv[0]);
     prepare_python(&mut command);
     if argv.len() > 1 {
         command.args(&argv[1..]);
@@ -330,7 +364,7 @@ fn find_python() -> Result<Vec<String>, String> {
 }
 
 fn ensure_runtime(data_dir: &Path) -> Result<Runtime, String> {
-    if Command::new("ffmpeg").arg("-version").output().is_err() {
+    if crate::util::command("ffmpeg").arg("-version").output().is_err() {
         return Err("ffmpeg was not found. Install ffmpeg and try again.".into());
     }
     let command = find_python()?;
@@ -445,7 +479,7 @@ fn stop_process(pid: u32) {
     }
     #[cfg(windows)]
     {
-        let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status();
+        let _ = crate::util::command("taskkill").args(["/PID", &pid.to_string(), "/F"]).status();
     }
 }
 

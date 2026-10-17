@@ -25,23 +25,28 @@ pub fn export_package(
     dest_path: String,
 ) -> Result<(), String> {
     let conn = state.db.lock().map_err(|err| err.to_string())?;
-    let playlist = library::query_playlist(&conn, &playlist_id)?.ok_or("Playlist not found.")?;
+    write_package(&conn, &playlist_id, Path::new(&dest_path))
+}
+
+pub fn write_package(conn: &rusqlite::Connection, playlist_id: &str, dest: &Path) -> Result<(), String> {
+    let playlist = library::query_playlist(conn, playlist_id)?.ok_or("Playlist not found.")?;
     if playlist.track_ids.is_empty() {
         return Err("This playlist has no tracks to export.".into());
     }
     let mut tracks = Vec::new();
     for id in &playlist.track_ids {
-        let track = library::query_track(&conn, id)?.ok_or("A playlist track is missing.")?;
+        let track = library::query_track(conn, id)?.ok_or("A playlist track is missing.")?;
         if track.missing || !Path::new(&track.path).is_file() {
             return Err(format!("\"{}\" is no longer on disk.", track.title));
         }
         tracks.push(track);
     }
-    let dest = PathBuf::from(&dest_path);
     if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+        }
     }
-    let file = File::create(&dest).map_err(|err| err.to_string())?;
+    let file = File::create(dest).map_err(|err| err.to_string())?;
     let mut zip = ZipWriter::new(file);
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
     let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);

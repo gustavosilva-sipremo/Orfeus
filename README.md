@@ -124,7 +124,7 @@ The script installs the npm packages and builds the setup wizard:
 src-tauri\target\release\bundle\nsis\Orfeus_1.6.1_x64-setup.exe
 ```
 
-The file name follows `version` in `src-tauri/tauri.conf.json`. The wizard asks whether to install for you or for everyone, then offers to open the bundled Python installer (`python-manager-26.4.msix`). That step is for YouTube import and can be skipped. The setup is unsigned: if SmartScreen appears, choose More info, then Run anyway.
+The file name follows `version` in `src-tauri/tauri.conf.json`. The wizard asks whether to install for you or for everyone, then checks this PC. It installs Python and FFmpeg only when they are missing, and adds them to the user PATH. WebView2 is downloaded when Windows does not already have it. Burning still needs `xorriso`, which the wizard only reports. The setup is unsigned: if SmartScreen appears, choose More info, then Run anyway. The setup icon is the Orfeus icon.
 
 YouTube import needs Python (`py`, `python`, or `python3`) and `ffmpeg` on the PATH. Burning needs `xorriso` and, for an audio CD, `ffmpeg`. The drive list uses Windows PowerShell. Audio CD is a blank CD for a CD player. Data CD and data DVD keep the original files.
 

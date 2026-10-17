@@ -100,27 +100,9 @@ export function LibraryView() {
     if (typeof picked === "string") rememberExport(picked)
   }
 
-  async function exportSelection(ids: string[]) {
-    if (!api.desktop()) {
-      useLibrary.setState({ notice: "Export opens in the desktop app." })
-      return
-    }
-    let dest = exportDir
-    if (!dest) {
-      const picked = await open({ directory: true, title: "Export tracks" })
-      if (typeof picked !== "string") return
-      dest = picked
-      rememberExport(dest)
-    }
-    await exportTracks(ids, dest)
-  }
-
   function beginExport(ids: string[]) {
-    if (ids.length > 1) {
-      setExtractIds(ids)
-      return
-    }
-    void exportSelection(ids).catch(showError)
+    if (!ids.length) return
+    setExtractIds(ids)
   }
 
   async function saveGain(track: Track, gain: number) {
@@ -217,7 +199,7 @@ export function LibraryView() {
         <ExtractDialog
           open={extractIds.length > 0}
           title="Export tracks"
-          hint="More than one track is saved as one zip in the folder you choose."
+          hint="The tracks are saved as one zip, named 01. Track name, in the folder you choose."
           onOpenChange={(open) => { if (!open) setExtractIds([]) }}
           onStart={(dir) => exportTracks(extractIds, dir)}
         />
@@ -272,7 +254,7 @@ export function LibraryView() {
                 onChange={() => toggle(track.id)}
                 aria-label={`Select ${track.title}`}
               />
-              <TrackMenu track={track} onEdit={() => setEditingId(track.id)} onAdd={() => setAddId(track.id)} onVolume={() => setVolumeTrack(track)} onExport={() => void exportSelection([track.id]).catch(showError)} onDelete={() => void deleteTrack(track.id).catch(showError)} />
+              <TrackMenu track={track} onEdit={() => setEditingId(track.id)} onAdd={() => setAddId(track.id)} onVolume={() => setVolumeTrack(track)} onExport={() => beginExport([track.id])} onDelete={() => void deleteTrack(track.id).catch(showError)} />
             </>
           )}
           empty={<EmptyLibrary filtered onFiles={() => void chooseFiles().catch(showError)} onFolder={() => void chooseFolder().catch(showError)} />}

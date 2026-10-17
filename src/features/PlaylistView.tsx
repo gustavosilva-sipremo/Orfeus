@@ -177,11 +177,11 @@ export function PlaylistView({ id }: { id: string }) {
       <ExtractDialog
         open={extractOpen}
         title="Extract playlist"
-        hint="Tracks are saved as 01. Track name, then 02, in the folder you choose."
+        hint="Saves a .orfeus package and a zip of the tracks, named 01. Track name, in the folder you choose."
         onOpenChange={setExtractOpen}
         onStart={async (dir) => {
           const report = await api.extractPlaylist(playlist.id, dir)
-          useLibrary.setState({ notice: report.exported === 1 ? "1 track extracted." : `${report.exported} tracks extracted.` })
+          useLibrary.setState({ notice: `Saved the .orfeus package and a zip with ${report.exported} ${report.exported === 1 ? "track" : "tracks"}.` })
           if (report.errors[0]) useLibrary.setState({ error: report.errors[0] })
         }}
       />

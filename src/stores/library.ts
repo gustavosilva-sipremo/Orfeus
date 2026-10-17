@@ -344,7 +344,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       const report = await api.exportTracks(trackIds, destDir)
       const extra = report.errors.length ? ` ${report.errors[0]}` : ""
       set({
-        notice: `${report.exported} ${report.exported === 1 ? "track" : "tracks"} exported.${extra}`,
+        notice: `${report.exported} ${report.exported === 1 ? "track" : "tracks"} saved in a zip.${extra}`,
         lastExportDir: report.destDir || destDir,
       })
     } catch (error) {

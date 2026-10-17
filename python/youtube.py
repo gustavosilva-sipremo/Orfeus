@@ -191,10 +191,12 @@ def download_stream(stream, folder, filename):
 
 
 def run_ffmpeg(args):
+    hidden = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
     return subprocess.run(
         ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *args],
         capture_output=True,
         text=True,
+        **hidden,
     )
 
 

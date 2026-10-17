@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::Write;
+use std::io;
 use std::path::Path;
 use std::process::Command;
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
@@ -29,87 +29,47 @@ pub fn export_tracks(
     if !dest.is_dir() {
         return Err("Choose a destination folder.".into());
     }
-    if track_ids.len() > 1 {
-        return export_archive(&app, &state, &track_ids, dest);
+    if track_ids.is_empty() {
+        return Err("Choose at least one track.".into());
     }
-    let conn = state.db.lock().map_err(|err| err.to_string())?;
-    let total = track_ids.len();
-    let mut exported = 0;
-    let mut errors = Vec::new();
-    for (index, id) in track_ids.iter().enumerate() {
-        let Some(track) = library::query_track(&conn, id)? else {
-            errors.push(format!("Track {id} was not found."));
-            continue;
-        };
-        let _ = app.emit(
-            "export://progress",
-            ExportProgress {
-                done: index,
-                total,
-                current: track.title.clone(),
-            },
-        );
-        if track.missing || !Path::new(&track.path).is_file() {
-            errors.push(format!("\"{}\" is no longer on disk.", track.title));
-            continue;
-        }
-        let ext = Path::new(&track.path)
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("audio");
-        let file_name = format!("{}.{}", sanitize_name(&display_name(&track.title, &track.artist)), ext);
-        let target = unique_path(dest, &file_name);
-        if let Err(err) = fs::copy(&track.path, &target) {
-            errors.push(format!("\"{}\": {err}", track.title));
-            continue;
-        }
-        let cover = track.cover_path.as_deref().map(Path::new);
-        if let Err(err) = tags::write_tags(
-            &target,
-            &track.title,
-            &track.artist,
-            &track.album,
-            &track.lyrics,
-            &track.synced_lyrics,
-            cover.filter(|path| path.is_file()),
-        ) {
-            errors.push(format!(
-                "\"{}\" was copied, but the tags were not written: {err}",
-                track.title
-            ));
-        }
-        exported += 1;
-    }
-    let _ = app.emit(
-        "export://progress",
-        ExportProgress {
-            done: total,
-            total,
-            current: String::new(),
-        },
-    );
-    Ok(ExportReport {
-        exported,
-        errors,
-        dest_dir,
-    })
+    export_archive(&app, &state, &track_ids, dest, "Orfeus.zip")
 }
 
-fn export_archive(app: &AppHandle, state: &State<AppState>, track_ids: &[String], dest: &Path) -> Result<ExportReport, String> {
-    let conn = state.db.lock().map_err(|err| err.to_string())?;
-    let archive = unique_path(dest, "Orfeus.zip");
+fn export_archive(
+    app: &AppHandle,
+    state: &State<AppState>,
+    track_ids: &[String],
+    dest: &Path,
+    archive_name: &str,
+) -> Result<ExportReport, String> {
+    let jobs = {
+        let conn = state.db.lock().map_err(|err| err.to_string())?;
+        let mut jobs = Vec::new();
+        for id in track_ids {
+            let Some(track) = library::query_track(&conn, id)? else {
+                jobs.push(Err(format!("Track {id} was not found.")));
+                continue;
+            };
+            jobs.push(Ok(track));
+        }
+        jobs
+    };
+    let archive = unique_path(dest, archive_name);
     let file = File::create(&archive).map_err(|err| err.to_string())?;
     let mut zip = ZipWriter::new(file);
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-    let total = track_ids.len();
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let total = jobs.len();
     let mut exported = 0;
     let mut errors = Vec::new();
     let scratch = std::env::temp_dir().join(format!("orfeus-export-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|err| err.to_string())?;
-    for (index, id) in track_ids.iter().enumerate() {
-        let Some(track) = library::query_track(&conn, id)? else {
-            errors.push(format!("Track {id} was not found."));
-            continue;
+    for (index, job) in jobs.into_iter().enumerate() {
+        let track = match job {
+            Ok(track) => track,
+            Err(message) => {
+                errors.push(message);
+                continue;
+            }
         };
         let _ = app.emit(
             "export://progress",
@@ -125,14 +85,18 @@ fn export_archive(app: &AppHandle, state: &State<AppState>, track_ids: &[String]
         fs::copy(&track.path, &staged).map_err(|err| err.to_string())?;
         let cover = track.cover_path.as_deref().map(Path::new).filter(|path| path.is_file());
         let _ = tags::write_tags(&staged, &track.title, &track.artist, &track.album, &track.lyrics, &track.synced_lyrics, cover);
-        let bytes = fs::read(&staged).map_err(|err| err.to_string())?;
         zip.start_file(&name, stored).map_err(|err| err.to_string())?;
-        zip.write_all(&bytes).map_err(|err| err.to_string())?;
+        let mut input = File::open(&staged).map_err(|err| err.to_string())?;
+        io::copy(&mut input, &mut zip).map_err(|err| err.to_string())?;
         exported += 1;
     }
     zip.finish().map_err(|err| err.to_string())?;
     let _ = fs::remove_dir_all(&scratch);
     let _ = app.emit("export://progress", ExportProgress { done: total, total, current: String::new() });
+    if exported == 0 {
+        let _ = fs::remove_file(&archive);
+        return Err(errors.first().cloned().unwrap_or_else(|| "Nothing was exported.".into()));
+    }
     Ok(ExportReport {
         exported,
         errors,
@@ -146,35 +110,22 @@ pub fn extract_playlist(app: AppHandle, state: State<AppState>, playlist_id: Str
     if !dest.is_dir() {
         return Err("Choose a destination folder.".into());
     }
-    let conn = state.db.lock().map_err(|err| err.to_string())?;
-    let playlist = library::query_playlist(&conn, &playlist_id)?.ok_or("Playlist not found.")?;
-    let ids = playlist.track_ids;
-    let total = ids.len();
-    if total == 0 {
-        return Err("This playlist has no tracks to extract.".into());
-    }
-    let mut exported = 0;
-    let mut errors = Vec::new();
-    for (index, id) in ids.iter().enumerate() {
-        let Some(track) = library::query_track(&conn, id)? else {
-            errors.push(format!("Track {id} was not found."));
-            continue;
-        };
-        let _ = app.emit("export://progress", ExportProgress { done: index, total, current: track.title.clone() });
-        if track.missing || !Path::new(&track.path).is_file() {
-            errors.push(format!("\"{}\" is no longer on disk.", track.title));
-            continue;
+    let (name, ids) = {
+        let conn = state.db.lock().map_err(|err| err.to_string())?;
+        let playlist = library::query_playlist(&conn, &playlist_id)?.ok_or("Playlist not found.")?;
+        if playlist.track_ids.is_empty() {
+            return Err("This playlist has no tracks to extract.".into());
         }
-        let ext = Path::new(&track.path).extension().and_then(|ext| ext.to_str()).unwrap_or("audio");
-        let file_name = format!("{:02}.{}.{}", index + 1, sanitize_name(&track.title), ext);
-        let target = unique_path(dest, &file_name);
-        fs::copy(&track.path, &target).map_err(|err| err.to_string())?;
-        let cover = track.cover_path.as_deref().map(Path::new).filter(|path| path.is_file());
-        let _ = tags::write_tags(&target, &track.title, &track.artist, &track.album, &track.lyrics, &track.synced_lyrics, cover);
-        exported += 1;
+        (sanitize_name(&playlist.name), playlist.track_ids)
+    };
+    let stem = if name.is_empty() { "Playlist".to_string() } else { name };
+    let report = export_archive(&app, &state, &ids, dest, &format!("{stem}.zip"))?;
+    {
+        let conn = state.db.lock().map_err(|err| err.to_string())?;
+        let package = unique_path(dest, &format!("{stem}.orfeus"));
+        crate::package::write_package(&conn, &playlist_id, &package)?;
     }
-    let _ = app.emit("export://progress", ExportProgress { done: total, total, current: String::new() });
-    Ok(ExportReport { exported, errors, dest_dir })
+    Ok(report)
 }
 
 #[tauri::command]
@@ -335,14 +286,6 @@ fn file_uri(path: &Path) -> String {
         }
     }
     uri
-}
-
-fn display_name(title: &str, artist: &str) -> String {
-    if artist.trim().is_empty() {
-        title.to_string()
-    } else {
-        format!("{artist} - {title}")
-    }
 }
 
 fn unique_path(dir: &Path, file_name: &str) -> std::path::PathBuf {
