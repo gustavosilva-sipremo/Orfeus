@@ -36,6 +36,9 @@
     "resources": {
       "../ffmpeg/ffmpeg-2026-10-15-git-afead44165-full_build/bin/ffmpeg.exe": "runtime/ffmpeg.exe",
       "windows/cache/python-3.12.10-amd64.exe": "runtime/python-installer.exe",
+      "windows/cache/xorriso.exe": "runtime/xorriso.exe",
+      "windows/cache/xorriso-GPL-3.0.txt": "runtime/xorriso-GPL-3.0.txt",
+      "windows/xorriso-source.txt": "runtime/xorriso-source.txt",
       "windows/setup-path.ps1": "runtime/setup-path.ps1"
     },
     "icon": [
@@ -57,6 +60,7 @@
         "displayLanguageSelector": false,
         "startMenuFolder": "Orfeus",
         "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
         "installerHooks": "./windows/hooks.nsh"
       }
     }

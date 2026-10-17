@@ -28,7 +28,11 @@ pub fn command(program: impl AsRef<OsStr>) -> Command {
 #[cfg(windows)]
 fn bundled_runtime_dir() -> Option<std::path::PathBuf> {
     let dir = std::env::current_exe().ok()?.parent()?.join("runtime");
-    dir.join("ffmpeg.exe").is_file().then_some(dir)
+    if dir.join("ffmpeg.exe").is_file() || dir.join("xorriso.exe").is_file() {
+        Some(dir)
+    } else {
+        None
+    }
 }
 
 pub fn now_secs() -> i64 {
@@ -99,7 +103,9 @@ pub fn sniff_ext(bytes: &[u8]) -> &'static str {
 }
 
 fn is_avif(bytes: &[u8]) -> bool {
-    bytes.len() >= 12 && &bytes[4..8] == b"ftyp" && matches!(&bytes[8..12], b"avif" | b"avis" | b"mif1")
+    bytes.len() >= 12
+        && &bytes[4..8] == b"ftyp"
+        && matches!(&bytes[8..12], b"avif" | b"avis" | b"mif1")
 }
 
 pub fn safe_zip_name(name: &str) -> bool {

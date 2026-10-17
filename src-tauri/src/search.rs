@@ -40,7 +40,11 @@ pub async fn search_metadata(
     Ok(report)
 }
 
-async fn search_sources(state: &AppState, title: &str, artist: &str) -> Result<SearchReport, String> {
+async fn search_sources(
+    state: &AppState,
+    title: &str,
+    artist: &str,
+) -> Result<SearchReport, String> {
     let client = http_client()?;
     let (recordings, mb_err) = match musicbrainz(&client, title, artist).await {
         Ok(items) => (items, None),
@@ -68,7 +72,14 @@ async fn search_sources(state: &AppState, title: &str, artist: &str) -> Result<S
             lyrics: None,
             synced_lyrics: None,
         };
-        let cover = resolve_cover(&client, &state.data_dir, &recording.releases, &hit.title, &hit.artist).await;
+        let cover = resolve_cover(
+            &client,
+            &state.data_dir,
+            &recording.releases,
+            &hit.title,
+            &hit.artist,
+        )
+        .await;
         cover_failed |= cover.failed;
         if cover.path.is_none() {
             cover_notes.push(cover.detail);
@@ -83,7 +94,13 @@ async fn search_sources(state: &AppState, title: &str, artist: &str) -> Result<S
             .map(strip_lrc)
             .filter(|value| !value.trim().is_empty())
             .or(lyric.plain_lyrics);
-        (lyric.track_name, lyric.artist_name, lyric.album_name, text, synced)
+        (
+            lyric.track_name,
+            lyric.artist_name,
+            lyric.album_name,
+            text,
+            synced,
+        )
     });
     if let Some((track_name, artist_name, album_name, text, synced)) = lyric_text {
         if hits.is_empty() {
@@ -118,7 +135,13 @@ async fn search_sources(state: &AppState, title: &str, artist: &str) -> Result<S
             }
         }
     }
-    let lookups = build_lookups(&hits, mb_err.as_deref(), lrc_err.as_deref(), cover_failed, &cover_notes);
+    let lookups = build_lookups(
+        &hits,
+        mb_err.as_deref(),
+        lrc_err.as_deref(),
+        cover_failed,
+        &cover_notes,
+    );
     Ok(SearchReport { hits, lookups })
 }
 
@@ -161,10 +184,19 @@ fn build_lookups(
     };
 
     let has_lyrics = hits.iter().any(|hit| {
-        hit.lyrics.as_deref().is_some_and(|text| !text.trim().is_empty())
-            || hit.synced_lyrics.as_deref().is_some_and(|text| text.contains('['))
+        hit.lyrics
+            .as_deref()
+            .is_some_and(|text| !text.trim().is_empty())
+            || hit
+                .synced_lyrics
+                .as_deref()
+                .is_some_and(|text| text.contains('['))
     });
-    let timed = hits.iter().any(|hit| hit.synced_lyrics.as_deref().is_some_and(|text| text.contains('[')));
+    let timed = hits.iter().any(|hit| {
+        hit.synced_lyrics
+            .as_deref()
+            .is_some_and(|text| text.contains('['))
+    });
     let lyrics = if has_lyrics {
         lookup(
             "lyrics",
@@ -185,16 +217,32 @@ fn build_lookups(
             ),
         )
     } else if has_meta {
-        lookup("lyrics", "missing", "The catalog lists this recording, without lyrics.")
+        lookup(
+            "lyrics",
+            "missing",
+            "The catalog lists this recording, without lyrics.",
+        )
     } else if mb_err.is_some() {
-        lookup("lyrics", "error", "Lyrics were not checked because the search failed.")
+        lookup(
+            "lyrics",
+            "error",
+            "Lyrics were not checked because the search failed.",
+        )
     } else {
-        lookup("lyrics", "missing", "No lyrics are published for this title and artist.")
+        lookup(
+            "lyrics",
+            "missing",
+            "No lyrics are published for this title and artist.",
+        )
     };
 
     let has_cover = hits.iter().any(|hit| hit.cover_url.is_some());
     let cover = if has_cover {
-        lookup("cover", "found", "Cover from Cover Art Archive, or iTunes when that archive has none.")
+        lookup(
+            "cover",
+            "found",
+            "Cover from Cover Art Archive, or iTunes when that archive has none.",
+        )
     } else if !has_meta && (mb_err.is_some() || lrc_err.is_some()) {
         lookup(
             "cover",
@@ -258,9 +306,16 @@ fn http_status_label(err: &str) -> String {
 }
 
 fn cache_get(key: &str) -> Option<SearchReport> {
-    let guard = SEARCH_CACHE.lock().unwrap_or_else(|poison| poison.into_inner());
+    let guard = SEARCH_CACHE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
     let entry = guard.as_ref()?.get(key)?;
-    let ttl = if entry.report.lookups.iter().any(|item| item.outcome == "error") {
+    let ttl = if entry
+        .report
+        .lookups
+        .iter()
+        .any(|item| item.outcome == "error")
+    {
         Duration::from_secs(15)
     } else {
         Duration::from_secs(180)
@@ -269,10 +324,18 @@ fn cache_get(key: &str) -> Option<SearchReport> {
 }
 
 fn cache_put(key: &str, report: SearchReport) {
-    let mut guard = SEARCH_CACHE.lock().unwrap_or_else(|poison| poison.into_inner());
+    let mut guard = SEARCH_CACHE
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
     let cache = guard.get_or_insert_with(HashMap::new);
     cache.retain(|_, entry| entry.at.elapsed() < Duration::from_secs(180));
-    cache.insert(key.to_string(), CacheEntry { at: Instant::now(), report });
+    cache.insert(
+        key.to_string(),
+        CacheEntry {
+            at: Instant::now(),
+            report,
+        },
+    );
 }
 
 #[tauri::command]
@@ -280,8 +343,7 @@ pub async fn fetch_cover(state: State<'_, AppState>, url: String) -> Result<Stri
     if !cover_host_allowed(&url) {
         return Err("That cover address is not allowed.".into());
     }
-    let client = http_client()?;
-    let bytes = download_bytes(&client, &url).await?;
+    let bytes = download_bytes(&url).await?;
     write_cover(&state.data_dir, &bytes)
 }
 
@@ -302,8 +364,8 @@ fn cover_host_allowed(url: &str) -> bool {
         return false;
     }
     match parsed.host_str() {
-        Some("coverartarchive.org") => true,
-        Some(host) if host.ends_with(".mzstatic.com") => true,
+        Some("coverartarchive.org") | Some("archive.org") => true,
+        Some(host) if host.ends_with(".archive.org") || host.ends_with(".mzstatic.com") => true,
         _ => false,
     }
 }
@@ -341,20 +403,32 @@ fn cover_indexes(releases: &[MbRelease]) -> Vec<String> {
     for release in releases {
         if release.status.as_deref() == Some("Official") && is_album(release) {
             if let Some(group) = &release.release_group {
-                push(format!("https://coverartarchive.org/release-group/{}", group.id));
+                push(format!(
+                    "https://coverartarchive.org/release-group/{}",
+                    group.id
+                ));
             }
         }
     }
     for release in releases {
         if release.status.as_deref() == Some("Official") {
-            push(format!("https://coverartarchive.org/release/{}", release.id));
+            push(format!(
+                "https://coverartarchive.org/release/{}",
+                release.id
+            ));
         }
     }
     for release in releases {
         if let Some(group) = &release.release_group {
-            push(format!("https://coverartarchive.org/release-group/{}", group.id));
+            push(format!(
+                "https://coverartarchive.org/release-group/{}",
+                group.id
+            ));
         }
-        push(format!("https://coverartarchive.org/release/{}", release.id));
+        push(format!(
+            "https://coverartarchive.org/release/{}",
+            release.id
+        ));
     }
     urls.truncate(4);
     urls
@@ -381,7 +455,7 @@ async fn resolve_cover(
             Front::Failed(err) => {
                 failure.get_or_insert(err);
             }
-            Front::Present => match download_cover(client, data_dir, &format!("{index}/front-250")).await {
+            Front::Present => match download_cover(data_dir, &format!("{index}/front-250")).await {
                 Some(path) => {
                     return CoverResult {
                         path: Some(path),
@@ -390,7 +464,9 @@ async fn resolve_cover(
                     };
                 }
                 None => {
-                    failure.get_or_insert_with(|| "Cover Art Archive did not return the image.".into());
+                    failure.get_or_insert_with(|| {
+                        "Cover Art Archive did not return the image.".into()
+                    });
                 }
             },
         }
@@ -414,7 +490,10 @@ async fn resolve_cover(
                 CoverResult {
                     path: None,
                     failed: true,
-                    detail: format!("Cover lookup failed ({}).", http_status_label(&failure.unwrap_or(err))),
+                    detail: format!(
+                        "Cover lookup failed ({}).",
+                        http_status_label(&failure.unwrap_or(err))
+                    ),
                 }
             }
         }
@@ -454,11 +533,12 @@ enum Front {
 }
 
 async fn caa_front(client: &reqwest::Client, index: &str) -> Front {
-    let response = match tokio::time::timeout(Duration::from_secs(6), client.get(index).send()).await {
-        Ok(Ok(response)) => response,
-        Ok(Err(err)) => return Front::Failed(err.to_string()),
-        Err(_) => return Front::Failed("the request timed out".into()),
-    };
+    let response =
+        match tokio::time::timeout(Duration::from_secs(6), client.get(index).send()).await {
+            Ok(Ok(response)) => response,
+            Ok(Err(err)) => return Front::Failed(err.to_string()),
+            Err(_) => return Front::Failed("the request timed out".into()),
+        };
     let status = response.status();
     if status.as_u16() == 404 {
         return Front::Absent;
@@ -482,7 +562,10 @@ async fn itunes_cover(
     title: &str,
     artist: &str,
 ) -> Result<Option<String>, String> {
-    let term = format!("{artist} {title}").split_whitespace().collect::<Vec<_>>().join(" ");
+    let term = format!("{artist} {title}")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     if term.is_empty() {
         return Ok(None);
     }
@@ -490,7 +573,12 @@ async fn itunes_cover(
         Duration::from_secs(6),
         client
             .get("https://itunes.apple.com/search")
-            .query(&[("term", term.as_str()), ("media", "music"), ("entity", "song"), ("limit", "1")])
+            .query(&[
+                ("term", term.as_str()),
+                ("media", "music"),
+                ("entity", "song"),
+                ("limit", "1"),
+            ])
             .send(),
     )
     .await
@@ -511,36 +599,72 @@ async fn itunes_cover(
     }) else {
         return Ok(None);
     };
-    download_cover(client, data_dir, &url)
+    download_cover(data_dir, &url)
         .await
         .map(Some)
         .ok_or_else(|| "the artwork download failed".to_string())
 }
 
-async fn download_cover(client: &reqwest::Client, data_dir: &Path, url: &str) -> Option<String> {
+async fn download_cover(data_dir: &Path, url: &str) -> Option<String> {
     if !cover_host_allowed(url) {
         return None;
     }
-    let bytes = download_bytes(client, url).await.ok()?;
+    let bytes = download_bytes(url).await.ok()?;
     write_cover(data_dir, &bytes).ok()
 }
 
-async fn download_bytes(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
-    let response = tokio::time::timeout(Duration::from_secs(20), client.get(url).send())
-        .await
-        .map_err(|_| "The cover lookup timed out.".to_string())?
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err("Cover not found.".into());
+fn cover_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .user_agent("Orfeus/0.1.0 (local music library)")
+        .timeout(Duration::from_secs(12))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|err| err.to_string())
+}
+
+async fn download_bytes(url: &str) -> Result<Vec<u8>, String> {
+    let client = cover_client()?;
+    let mut current =
+        reqwest::Url::parse(url).map_err(|_| "That cover address is not allowed.".to_string())?;
+    for _ in 0..5 {
+        if !cover_host_allowed(current.as_str()) {
+            return Err("That cover address is not allowed.".into());
+        }
+        let response =
+            tokio::time::timeout(Duration::from_secs(20), client.get(current.clone()).send())
+                .await
+                .map_err(|_| "The cover lookup timed out.".to_string())?
+                .map_err(|err| err.to_string())?;
+        let status = response.status();
+        if status.is_redirection() {
+            let location = response
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .ok_or_else(|| "Cover not found.".to_string())?;
+            current = current
+                .join(location)
+                .map_err(|_| "Cover not found.".to_string())?;
+            continue;
+        }
+        if !status.is_success() {
+            return Err("Cover not found.".into());
+        }
+        let bytes = response.bytes().await.map_err(|err| err.to_string())?;
+        if bytes.len() > 15 * 1024 * 1024 {
+            return Err("The cover is too large.".into());
+        }
+        if util::image_ext(&bytes).is_none() {
+            return Err("The cover is not a supported image.".into());
+        }
+        return Ok(bytes.to_vec());
     }
-    let bytes = response.bytes().await.map_err(|err| err.to_string())?;
-    if bytes.len() > 15 * 1024 * 1024 {
-        return Err("The cover is too large.".into());
-    }
-    Ok(bytes.to_vec())
+    Err("The cover lookup timed out.".into())
 }
 
 fn write_cover(data_dir: &Path, bytes: &[u8]) -> Result<String, String> {
+    let ext =
+        util::image_ext(bytes).ok_or_else(|| "The cover is not a supported image.".to_string())?;
     let dir = data_dir.join("cover-drops");
     std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
     if let Ok(entries) = std::fs::read_dir(&dir) {
@@ -551,7 +675,7 @@ fn write_cover(data_dir: &Path, bytes: &[u8]) -> Result<String, String> {
             }
         }
     }
-    let dest = dir.join(format!("{}.{}", uuid::Uuid::new_v4(), util::sniff_ext(bytes)));
+    let dest = dir.join(format!("{}.{ext}", uuid::Uuid::new_v4()));
     std::fs::write(&dest, bytes).map_err(|err| err.to_string())?;
     Ok(dest.to_string_lossy().to_string())
 }
@@ -584,13 +708,14 @@ async fn musicbrainz(
         query.push(format!("artist:\"{}\"", lucene(artist)));
     }
     let query = query.join(" AND ");
-    let response = send_retry(|| {
-        client.get("https://musicbrainz.org/ws/2/recording/").query(&[
-            ("query", query.as_str()),
-            ("fmt", "json"),
-            ("limit", "5"),
-        ])
-    }, true)
+    let response = send_retry(
+        || {
+            client
+                .get("https://musicbrainz.org/ws/2/recording/")
+                .query(&[("query", query.as_str()), ("fmt", "json"), ("limit", "5")])
+        },
+        true,
+    )
     .await?;
     let body: MbResponse = response.json().await.map_err(|err| err.to_string())?;
     Ok(body
@@ -625,7 +750,11 @@ async fn lrclib(
     artist: &str,
 ) -> Result<Vec<LyricHit>, String> {
     let response = send_retry(
-        || client.get("https://lrclib.net/api/search").query(&[("track_name", title), ("artist_name", artist)]),
+        || {
+            client
+                .get("https://lrclib.net/api/search")
+                .query(&[("track_name", title), ("artist_name", artist)])
+        },
         false,
     )
     .await?;
@@ -802,7 +931,9 @@ struct LrcItem {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_lookups, cover_indexes, strip_lrc, MbRelease, MbReleaseGroup};
+    use super::{
+        build_lookups, cover_host_allowed, cover_indexes, strip_lrc, MbRelease, MbReleaseGroup,
+    };
 
     #[test]
     fn strips_timestamps_and_keeps_the_verse() {
@@ -851,5 +982,23 @@ mod tests {
         ];
         let urls = cover_indexes(&releases);
         assert_eq!(urls[0], "https://coverartarchive.org/release-group/rg1");
+    }
+
+    #[test]
+    fn cover_hosts_follow_the_archive_redirect() {
+        assert!(cover_host_allowed(
+            "https://coverartarchive.org/release/x/front-250"
+        ));
+        assert!(cover_host_allowed(
+            "https://archive.org/download/mbid/front.jpg"
+        ));
+        assert!(cover_host_allowed(
+            "https://ia800.us.archive.org/0/items/x/front.jpg"
+        ));
+        assert!(cover_host_allowed(
+            "https://is1-ssl.mzstatic.com/image/thumb/a/600x600bb.jpg"
+        ));
+        assert!(!cover_host_allowed("https://example.com/cover.jpg"));
+        assert!(!cover_host_allowed("http://archive.org/cover.jpg"));
     }
 }

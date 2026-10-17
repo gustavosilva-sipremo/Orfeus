@@ -1,6 +1,6 @@
 mod audio;
-mod disc;
 mod db;
+mod disc;
 mod export;
 mod library;
 mod media;

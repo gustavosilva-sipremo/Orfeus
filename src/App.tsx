@@ -169,7 +169,7 @@ export function App() {
 
   if (!libraryReady || !playerReady) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-black text-foreground">
+      <div className="flex h-full flex-col items-center justify-center gap-4 bg-black text-foreground">
         <CubeLoader size={72} label="Opening the library" />
         <p className="text-base text-muted-foreground">Opening the library</p>
       </div>
@@ -178,7 +178,7 @@ export function App() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="relative z-0 flex h-screen flex-col overflow-hidden text-foreground">
+      <div className="relative z-0 flex h-full flex-col overflow-hidden text-foreground">
         <div className="pointer-events-none fixed inset-0 -z-10">
           <img src="/images/Orpheus_and_Eurydice_by_Peter_Paul_Rubens.jpg" alt="" className="h-full w-full object-cover" />
           <div className="absolute inset-0 bg-linear-to-b from-black/30 via-black/45 to-black/75" />

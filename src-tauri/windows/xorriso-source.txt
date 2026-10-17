@@ -1,0 +1,4 @@
+xorriso 1.5.8.pl02 for Windows
+Build: https://github.com/rhaslund/xorriso-windows/tree/debcbef44b0abbb192bd5c2e14838803fc7d2773
+Upstream source: https://www.gnu.org/software/xorriso/xorriso-1.5.8.pl02.tar.gz
+License: GPL-3.0. The license text is xorriso-GPL-3.0.txt in this folder.

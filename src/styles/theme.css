@@ -68,8 +68,7 @@
     font-size: 18px;
   }
   html[data-platform="windows"] {
-    font-size: 15px;
-    zoom: 0.8;
+    font-size: 14.4px;
   }
   html,
   body,

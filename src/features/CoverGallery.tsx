@@ -111,7 +111,7 @@ export function CoverGallery() {
         <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
           <Images className="mb-3 size-10 text-primary" />
           <h3 className="serif text-3xl">No covers yet</h3>
-          <p className="mt-2 max-w-sm text-base text-muted-foreground">Covers you add, paste, or download are kept here so they can be used again.</p>
+          <p className="mt-2 max-w-sm text-base text-muted-foreground">A cover shows up here after you save it on a track or a playlist.</p>
         </div>
       ) : (
         <ul className="grid min-h-0 flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] content-start gap-3 overflow-auto px-4 pb-6 sm:px-6">

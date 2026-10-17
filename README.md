@@ -9,7 +9,7 @@ Version 1.6.1. The interface is in English.
 - Import songs or a whole folder into one or more libraries. The first library keeps a library icon. Extra libraries can be marked as music or a podcast.
 - Play the visible list in order, or keep the queue on the current track. Changing that choice takes effect during the song that is already playing.
 - Change speed to 0.5×, 1×, 1.2×, 1.5×, and 2×, and play backward at −1.2× and −1.5×.
-- Edit a track’s title, artist, album, volume, lyrics, and cover. A cover can be pasted with Ctrl+V, dropped on the artwork, or chosen from a file. Search can fill the cover, lyrics, and timing from MusicBrainz, Cover Art Archive, iTunes, and LRCLIB. A searched image is kept only after you apply it to a track or a playlist, and the same picture is stored once.
+- Edit a track’s title, artist, album, volume, lyrics, and cover. A cover can be pasted with Ctrl+V, dropped on the artwork, or chosen from a file. Search can fill the cover, lyrics, and timing from MusicBrainz, Cover Art Archive, iTunes, and LRCLIB. A searched image is kept only after you save it on a track or a playlist, and the same picture is stored once.
 - Build playlists, pin a favorite to the top of the sidebar, and set playback to stop, repeat the track, or repeat the playlist.
 - Extract several library tracks as one zip, or extract a playlist as `01.Track name.mp3` into a folder you choose. The folder is remembered. Extraction starts when you press Extract.
 - Import a playlist from an `.orfeus` package.
@@ -124,7 +124,7 @@ The script installs the npm packages and builds the setup wizard:
 src-tauri\target\release\bundle\nsis\Orfeus_1.6.1_x64-setup.exe
 ```
 
-The file name follows `version` in `src-tauri/tauri.conf.json`. The wizard asks whether to install for you or for everyone, then checks this PC. It installs Python and FFmpeg only when they are missing, and adds them to the user PATH. WebView2 is downloaded when Windows does not already have it. Burning still needs `xorriso`, which the wizard only reports. The setup is unsigned: if SmartScreen appears, choose More info, then Run anyway. The setup icon is the Orfeus icon.
+The file name follows `version` in `src-tauri/tauri.conf.json`. The wizard asks you to accept the terms, then whether to install for you or for everyone, then checks this PC. It installs Python, FFmpeg, and xorriso only when they are missing, and adds them to the user PATH. WebView2 is downloaded when Windows does not already have it. The setup is unsigned: if SmartScreen appears, choose More info, then Run anyway. The setup icon and the uninstall icon are the Orfeus icon.
 
 YouTube import needs Python (`py`, `python`, or `python3`) and `ffmpeg` on the PATH. Burning needs `xorriso` and, for an audio CD, `ffmpeg`. The drive list uses Windows PowerShell. Audio CD is a blank CD for a CD player. Data CD and data DVD keep the original files.
 

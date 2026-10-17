@@ -53,9 +53,12 @@ fn save_listen(conn: &Connection, input: &RecordListen) -> Result<i64, String> {
 #[tauri::command]
 pub fn clear_listens(state: State<AppState>, from: i64, to: i64) -> Result<(), String> {
     let conn = state.db.lock().map_err(|err| err.to_string())?;
-    conn.execute("DELETE FROM plays WHERE played_at >= ?1 AND played_at < ?2", params![from, to])
-        .map(|_| ())
-        .map_err(|err| err.to_string())
+    conn.execute(
+        "DELETE FROM plays WHERE played_at >= ?1 AND played_at < ?2",
+        params![from, to],
+    )
+    .map(|_| ())
+    .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -112,13 +115,19 @@ mod tests {
             play_id: None,
         };
         let id = save_listen(&conn, &input).unwrap();
-        let more = RecordListen { seconds: 20.0, play_id: Some(id), ..input };
+        let more = RecordListen {
+            seconds: 20.0,
+            play_id: Some(id),
+            ..input
+        };
         assert_eq!(save_listen(&conn, &more).unwrap(), id);
         let now = now_secs();
         let rows = query_listens(&conn, now - 60, now + 60).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].seconds, 60);
-        assert!(query_listens(&conn, now + 120, now + 180).unwrap().is_empty());
+        assert!(query_listens(&conn, now + 120, now + 180)
+            .unwrap()
+            .is_empty());
         let _ = std::fs::remove_dir_all(root);
     }
 }

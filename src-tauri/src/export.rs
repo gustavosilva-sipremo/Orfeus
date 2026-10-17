@@ -1,9 +1,9 @@
 use std::fs::{self, File};
 use std::io;
-use std::path::Path;
-use std::process::Command;
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 use std::io::ErrorKind;
+use std::path::Path;
+use std::process::Command;
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 use std::process::Stdio;
 
@@ -73,29 +73,59 @@ fn export_archive(
         };
         let _ = app.emit(
             "export://progress",
-            ExportProgress { done: index, total, current: track.title.clone() },
+            ExportProgress {
+                done: index,
+                total,
+                current: track.title.clone(),
+            },
         );
         if track.missing || !Path::new(&track.path).is_file() {
             errors.push(format!("\"{}\" is no longer on disk.", track.title));
             continue;
         }
-        let ext = Path::new(&track.path).extension().and_then(|ext| ext.to_str()).unwrap_or("audio");
+        let ext = Path::new(&track.path)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("audio");
         let name = format!("{:02}.{}.{}", index + 1, sanitize_name(&track.title), ext);
         let staged = scratch.join(format!("{index}.{ext}"));
         fs::copy(&track.path, &staged).map_err(|err| err.to_string())?;
-        let cover = track.cover_path.as_deref().map(Path::new).filter(|path| path.is_file());
-        let _ = tags::write_tags(&staged, &track.title, &track.artist, &track.album, &track.lyrics, &track.synced_lyrics, cover);
-        zip.start_file(&name, stored).map_err(|err| err.to_string())?;
+        let cover = track
+            .cover_path
+            .as_deref()
+            .map(Path::new)
+            .filter(|path| path.is_file());
+        let _ = tags::write_tags(
+            &staged,
+            &track.title,
+            &track.artist,
+            &track.album,
+            &track.lyrics,
+            &track.synced_lyrics,
+            cover,
+        );
+        zip.start_file(&name, stored)
+            .map_err(|err| err.to_string())?;
         let mut input = File::open(&staged).map_err(|err| err.to_string())?;
         io::copy(&mut input, &mut zip).map_err(|err| err.to_string())?;
         exported += 1;
     }
     zip.finish().map_err(|err| err.to_string())?;
     let _ = fs::remove_dir_all(&scratch);
-    let _ = app.emit("export://progress", ExportProgress { done: total, total, current: String::new() });
+    let _ = app.emit(
+        "export://progress",
+        ExportProgress {
+            done: total,
+            total,
+            current: String::new(),
+        },
+    );
     if exported == 0 {
         let _ = fs::remove_file(&archive);
-        return Err(errors.first().cloned().unwrap_or_else(|| "Nothing was exported.".into()));
+        return Err(errors
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "Nothing was exported.".into()));
     }
     Ok(ExportReport {
         exported,
@@ -105,20 +135,30 @@ fn export_archive(
 }
 
 #[tauri::command]
-pub fn extract_playlist(app: AppHandle, state: State<AppState>, playlist_id: String, dest_dir: String) -> Result<ExportReport, String> {
+pub fn extract_playlist(
+    app: AppHandle,
+    state: State<AppState>,
+    playlist_id: String,
+    dest_dir: String,
+) -> Result<ExportReport, String> {
     let dest = Path::new(&dest_dir);
     if !dest.is_dir() {
         return Err("Choose a destination folder.".into());
     }
     let (name, ids) = {
         let conn = state.db.lock().map_err(|err| err.to_string())?;
-        let playlist = library::query_playlist(&conn, &playlist_id)?.ok_or("Playlist not found.")?;
+        let playlist =
+            library::query_playlist(&conn, &playlist_id)?.ok_or("Playlist not found.")?;
         if playlist.track_ids.is_empty() {
             return Err("This playlist has no tracks to extract.".into());
         }
         (sanitize_name(&playlist.name), playlist.track_ids)
     };
-    let stem = if name.is_empty() { "Playlist".to_string() } else { name };
+    let stem = if name.is_empty() {
+        "Playlist".to_string()
+    } else {
+        name
+    };
     let report = export_archive(&app, &state, &ids, dest, &format!("{stem}.zip"))?;
     {
         let conn = state.db.lock().map_err(|err| err.to_string())?;
@@ -145,7 +185,10 @@ pub(crate) fn usable_directory(path: &Path) -> Option<std::path::PathBuf> {
         return None;
     }
     if path.is_file() {
-        return path.parent().filter(|parent| parent.is_dir()).map(Path::to_path_buf);
+        return path
+            .parent()
+            .filter(|parent| parent.is_dir())
+            .map(Path::to_path_buf);
     }
     let _ = fs::create_dir_all(path);
     if path.is_dir() {
@@ -241,7 +284,11 @@ fn launch(program: &str, args: &[&std::ffi::OsStr], wait: bool) -> Launch {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    let result = if wait { command.status().map(|status| status.success()) } else { command.spawn().map(|_| true) };
+    let result = if wait {
+        command.status().map(|status| status.success())
+    } else {
+        command.spawn().map(|_| true)
+    };
     match result {
         Ok(true) => Launch::Opened,
         Ok(false) => Launch::Failed(format!("{program} could not open that folder.")),
@@ -271,7 +318,9 @@ fn show_folder_over_dbus(path: &Path) -> Option<String> {
     match status {
         Ok(status) if status.success() => None,
         Ok(_) => Some("The file manager rejected that folder.".into()),
-        Err(err) if err.kind() == ErrorKind::NotFound => Some("Could not open the file manager.".into()),
+        Err(err) if err.kind() == ErrorKind::NotFound => {
+            Some("Could not open the file manager.".into())
+        }
         Err(err) => Some(err.to_string()),
     }
 }
@@ -281,7 +330,9 @@ fn file_uri(path: &Path) -> String {
     let mut uri = String::from("file://");
     for byte in path.to_string_lossy().bytes() {
         match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.' | b'~' => uri.push(byte as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.' | b'~' => {
+                uri.push(byte as char)
+            }
             _ => uri.push_str(&format!("%{byte:02X}")),
         }
     }
@@ -298,7 +349,10 @@ fn unique_path(dir: &Path, file_name: &str) -> std::path::PathBuf {
         .file_stem()
         .and_then(|stem| stem.to_str())
         .unwrap_or("track");
-    let ext = path.extension().and_then(|ext| ext.to_str()).unwrap_or("audio");
+    let ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("audio");
     for index in 2..10_000 {
         let next = dir.join(format!("{stem} ({index}).{ext}"));
         if !next.exists() {
@@ -326,6 +380,9 @@ mod tests {
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     #[test]
     fn folder_uri_escapes_spaces_and_accents() {
-        assert_eq!(file_uri(Path::new("/tmp/música nova")), "file:///tmp/m%C3%BAsica%20nova");
+        assert_eq!(
+            file_uri(Path::new("/tmp/música nova")),
+            "file:///tmp/m%C3%BAsica%20nova"
+        );
     }
 }

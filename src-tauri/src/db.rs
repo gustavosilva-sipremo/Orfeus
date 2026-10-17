@@ -117,7 +117,12 @@ fn ensure_shelves(conn: &Connection) -> Result<(), String> {
         );",
     )
     .map_err(|err| err.to_string())?;
-    ensure_column(conn, "watched_folders", "shelf_id", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(
+        conn,
+        "watched_folders",
+        "shelf_id",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM shelves", [], |row| row.get(0))
         .map_err(|err| err.to_string())?;
@@ -147,7 +152,10 @@ fn ensure_column(conn: &Connection, table: &str, column: &str, decl: &str) -> Re
     if names.iter().any(|name| name == column) {
         return Ok(());
     }
-    conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {column} {decl}"), [])
-        .map_err(|err| err.to_string())?;
+    conn.execute(
+        &format!("ALTER TABLE {table} ADD COLUMN {column} {decl}"),
+        [],
+    )
+    .map_err(|err| err.to_string())?;
     Ok(())
 }

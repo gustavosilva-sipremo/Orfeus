@@ -111,7 +111,8 @@ struct ScriptEvent {
 #[tauri::command]
 pub fn youtube_defaults(app: AppHandle, state: State<AppState>) -> Result<YoutubeDefaults, String> {
     let conn = state.db.lock().map_err(|err| err.to_string())?;
-    let audio = first_watched(&conn)?.unwrap_or_else(|| system_audio(&app).to_string_lossy().to_string());
+    let audio =
+        first_watched(&conn)?.unwrap_or_else(|| system_audio(&app).to_string_lossy().to_string());
     let video = system_video(&app).to_string_lossy().to_string();
     Ok(YoutubeDefaults {
         audio_dir: ready_dir(&audio),
@@ -126,7 +127,10 @@ fn ready_dir(path: &str) -> String {
 }
 
 #[tauri::command]
-pub async fn youtube_probe(state: State<'_, AppState>, url: String) -> Result<YoutubeProbe, String> {
+pub async fn youtube_probe(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<YoutubeProbe, String> {
     let url = check_url(&url)?;
     let data_dir = state.data_dir.clone();
     tauri::async_runtime::spawn_blocking(move || probe_blocking(&data_dir, &url))
@@ -151,7 +155,15 @@ pub async fn youtube_download(
     }
     let data_dir = state.data_dir.clone();
     let outcome = tauri::async_runtime::spawn_blocking(move || {
-        download_blocking(app, &data_dir, &url, &audio_dir, &video_dir, request.keep_video, request.resolution)
+        download_blocking(
+            app,
+            &data_dir,
+            &url,
+            &audio_dir,
+            &video_dir,
+            request.keep_video,
+            request.resolution,
+        )
     })
     .await
     .map_err(|err| err.to_string());
@@ -187,14 +199,18 @@ fn probe_blocking(data_dir: &Path, url: &str) -> Result<YoutubeProbe, String> {
             let kind = event.event.clone();
             match kind.as_str() {
                 "probe" => {
-                probe = Some(YoutubeProbe {
-                    kind: if event.kind == "playlist" { "playlist".into() } else { "video".into() },
-                    title: event.title,
-                    author: event.author,
-                    length: event.length,
-                    resolutions: event.resolutions,
-                    entries: event.entries,
-                });
+                    probe = Some(YoutubeProbe {
+                        kind: if event.kind == "playlist" {
+                            "playlist".into()
+                        } else {
+                            "video".into()
+                        },
+                        title: event.title,
+                        author: event.author,
+                        length: event.length,
+                        resolutions: event.resolutions,
+                        entries: event.entries,
+                    });
                 }
                 "error" => error = Some(event.message),
                 _ => {}
@@ -218,7 +234,9 @@ fn download_blocking(
 ) -> Result<YoutubeDone, String> {
     emit_progress(&app, "prepare", 0.0, "Preparing the downloader");
     let runtime = ensure_runtime(data_dir)?;
-    let work = data_dir.join("youtube-tmp").join(uuid::Uuid::new_v4().to_string());
+    let work = data_dir
+        .join("youtube-tmp")
+        .join(uuid::Uuid::new_v4().to_string());
     fs::create_dir_all(&work).map_err(|err| err.to_string())?;
     let mut done = None;
     let mut error = None;
@@ -235,7 +253,9 @@ fn download_blocking(
         "--keep".into(),
         if keep_video { "yes" } else { "no" }.into(),
         "--resolution".into(),
-        resolution.map(|height| height.to_string()).unwrap_or_default(),
+        resolution
+            .map(|height| height.to_string())
+            .unwrap_or_default(),
     ];
     let run = run_script(&runtime, &args, &mut |event| {
         let kind = event.event.clone();
@@ -266,7 +286,11 @@ fn download_blocking(
 }
 
 fn emit_progress(app: &AppHandle, phase: &str, percent: f32, label: &str) {
-    let percent = if percent.is_finite() { percent.clamp(0.0, 100.0) } else { 0.0 };
+    let percent = if percent.is_finite() {
+        percent.clamp(0.0, 100.0)
+    } else {
+        0.0
+    };
     let _ = app.emit(
         "youtube://progress",
         YoutubeProgress {
@@ -285,7 +309,11 @@ struct Runtime {
 
 fn python_launchers() -> Vec<Vec<String>> {
     if cfg!(windows) {
-        let mut list = vec![vec!["py".into(), "-3".into()], vec!["python".into()], vec!["python3".into()]];
+        let mut list = vec![
+            vec!["py".into(), "-3".into()],
+            vec!["python".into()],
+            vec!["python3".into()],
+        ];
         list.extend(windows_python_candidates());
         list
     } else {
@@ -364,7 +392,11 @@ fn find_python() -> Result<Vec<String>, String> {
 }
 
 fn ensure_runtime(data_dir: &Path) -> Result<Runtime, String> {
-    if crate::util::command("ffmpeg").arg("-version").output().is_err() {
+    if crate::util::command("ffmpeg")
+        .arg("-version")
+        .output()
+        .is_err()
+    {
         return Err("ffmpeg was not found. Install ffmpeg and try again.".into());
     }
     let command = find_python()?;
@@ -377,7 +409,13 @@ fn ensure_runtime(data_dir: &Path) -> Result<Runtime, String> {
     if current != requirements || !installed.is_file() {
         fs::write(&req_path, requirements).map_err(|err| err.to_string())?;
         let output = python_command(&command)
-            .args(["-m", "pip", "install", "--disable-pip-version-check", "--target"])
+            .args([
+                "-m",
+                "pip",
+                "install",
+                "--disable-pip-version-check",
+                "--target",
+            ])
             .arg(&libs)
             .arg("-r")
             .arg(&req_path)
@@ -398,10 +436,18 @@ fn ensure_runtime(data_dir: &Path) -> Result<Runtime, String> {
     if fs::read_to_string(&script_path).unwrap_or_default() != script {
         fs::write(&script_path, script).map_err(|err| err.to_string())?;
     }
-    Ok(Runtime { command, script: script_path, libs })
+    Ok(Runtime {
+        command,
+        script: script_path,
+        libs,
+    })
 }
 
-fn run_script(runtime: &Runtime, args: &[String], on_event: &mut dyn FnMut(ScriptEvent)) -> Result<(), String> {
+fn run_script(
+    runtime: &Runtime,
+    args: &[String],
+    on_event: &mut dyn FnMut(ScriptEvent),
+) -> Result<(), String> {
     if DOWNLOAD_CANCEL.swap(false, Ordering::SeqCst) {
         return Err("Skipped.".into());
     }
@@ -425,8 +471,14 @@ fn run_script(runtime: &Runtime, args: &[String], on_event: &mut dyn FnMut(Scrip
             std::thread::sleep(Duration::from_millis(120));
         }
     });
-    let stdout = child.stdout.take().ok_or("Could not read the downloader.")?;
-    let mut stderr = child.stderr.take().ok_or("Could not read the downloader.")?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("Could not read the downloader.")?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or("Could not read the downloader.")?;
     let stderr_task = std::thread::spawn(move || {
         let mut buffer = String::new();
         let _ = stderr.read_to_string(&mut buffer);
@@ -475,11 +527,15 @@ fn run_script(runtime: &Runtime, args: &[String], on_event: &mut dyn FnMut(Scrip
 fn stop_process(pid: u32) {
     #[cfg(unix)]
     {
-        let _ = Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+        let _ = Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .status();
     }
     #[cfg(windows)]
     {
-        let _ = crate::util::command("taskkill").args(["/PID", &pid.to_string(), "/F"]).status();
+        let _ = crate::util::command("taskkill")
+            .args(["/PID", &pid.to_string(), "/F"])
+            .status();
     }
 }
 

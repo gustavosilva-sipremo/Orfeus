@@ -47,7 +47,10 @@ enum Cmd {
     Previous,
     Stop,
     SetCrossfade(f32),
-    Retarget { tracks: Vec<QueueTrack>, index: usize },
+    Retarget {
+        tracks: Vec<QueueTrack>,
+        index: usize,
+    },
     Describe {
         id: String,
         title: String,
@@ -310,7 +313,11 @@ pub fn play(state: State<AppState>, request: PlayRequest) -> Result<(), String> 
 }
 
 #[tauri::command]
-pub fn retarget(state: State<AppState>, tracks: Vec<QueueTrack>, index: usize) -> Result<(), String> {
+pub fn retarget(
+    state: State<AppState>,
+    tracks: Vec<QueueTrack>,
+    index: usize,
+) -> Result<(), String> {
     state.audio.retarget(tracks, index)
 }
 
@@ -460,7 +467,8 @@ fn thread_main(rx: Receiver<Cmd>, shared: Arc<Shared>, app: AppHandle) {
                         }
                     }
                     emit_state(&app, &shared);
-                } else if let Err(TryRecvError::Disconnected) = wait_cmd(&rx, &mut player, &shared) {
+                } else if let Err(TryRecvError::Disconnected) = wait_cmd(&rx, &mut player, &shared)
+                {
                     return;
                 }
             }
@@ -598,7 +606,11 @@ fn handle(player: &mut Player, shared: &Shared, cmd: Cmd) {
             if let Some(track) = player.queue.iter_mut().find(|track| track.id == id) {
                 track.title = title.clone();
                 track.artist = artist.clone();
-                track.cover_path = if cover.is_empty() { None } else { Some(cover.clone()) };
+                track.cover_path = if cover.is_empty() {
+                    None
+                } else {
+                    Some(cover.clone())
+                };
             }
             if lock_string(&shared.track_id).as_str() == id {
                 *lock_string(&shared.title) = title;
@@ -716,13 +728,20 @@ fn publish(player: &Player, shared: &Shared) {
 
 fn sync_flags(player: &Player, shared: &Shared) {
     shared.paused.store(player.paused, Ordering::Relaxed);
-    shared.has_track.store(player.current.is_some(), Ordering::Relaxed);
     shared
-        .playing
-        .store(!player.paused && player.current.is_some(), Ordering::Relaxed);
+        .has_track
+        .store(player.current.is_some(), Ordering::Relaxed);
+    shared.playing.store(
+        !player.paused && player.current.is_some(),
+        Ordering::Relaxed,
+    );
     shared.index.store(player.index, Ordering::Relaxed);
-    shared.queue_len.store(player.queue.len(), Ordering::Relaxed);
-    shared.rate_bits.store(player.rate.to_bits(), Ordering::Relaxed);
+    shared
+        .queue_len
+        .store(player.queue.len(), Ordering::Relaxed);
+    shared
+        .rate_bits
+        .store(player.rate.to_bits(), Ordering::Relaxed);
     *lock_string(&shared.loop_mode) = player.loop_mode.as_str().into();
 }
 
@@ -752,7 +771,9 @@ fn open_active(path: &Path, fallback_duration: Option<f64>) -> Result<Active, St
         .ok_or_else(|| "No audio track in this file.".to_string())?;
     let track_id = track.id;
     let codec_params = track.codec_params.clone();
-    let duration = track_duration(&codec_params).or(fallback_duration).unwrap_or(0.0);
+    let duration = track_duration(&codec_params)
+        .or(fallback_duration)
+        .unwrap_or(0.0);
     let sample_rate = codec_params.sample_rate.unwrap_or(0);
     let decoder = get_codecs()
         .make(&codec_params, &DecoderOptions::default())
@@ -909,7 +930,11 @@ fn reverse_chunk(active: &mut Active, shared: &Shared, dst_rate: u32, speed: f32
 }
 
 fn should_crossfade(player: &Player, shared: &Shared, dst_rate: u32) -> bool {
-    if player.rate < 0.0 || player.crossfade <= 0.05 || player.loop_mode == LoopMode::Track || player.current.is_none() {
+    if player.rate < 0.0
+        || player.crossfade <= 0.05
+        || player.loop_mode == LoopMode::Track
+        || player.current.is_none()
+    {
         return false;
     }
     let Some(active) = player.current.as_ref() else {
@@ -985,7 +1010,9 @@ fn transition(player: &mut Player, shared: &Shared, start: usize, manual: bool) 
         player
             .current
             .as_ref()
-            .map(|active| (active.duration - f64::from(seconds) * f64::from(player.rate.max(0.05))).max(0.0))
+            .map(|active| {
+                (active.duration - f64::from(seconds) * f64::from(player.rate.max(0.05))).max(0.0)
+            })
             .unwrap_or(heard)
     };
     player.ended = false;
@@ -1012,7 +1039,8 @@ fn promote_blend(player: &mut Player, shared: &Shared) {
     player.ended = false;
     if !blend.announced {
         publish(player, shared);
-        let into = blend.frames_done as f64 / f64::from(shared.device_rate.load(Ordering::Relaxed).max(1))
+        let into = blend.frames_done as f64
+            / f64::from(shared.device_rate.load(Ordering::Relaxed).max(1))
             * f64::from(player.rate.max(0.05));
         shared.position.store(into.to_bits(), Ordering::Relaxed);
         shared.duration.store(duration.to_bits(), Ordering::Relaxed);
@@ -1045,7 +1073,11 @@ fn pump_blend(player: &mut Player, shared: &Shared, dst_rate: u32) -> PumpStatus
     if queued >= max_samples {
         return PumpStatus::Buffered;
     }
-    let Some((done, total)) = player.blend.as_ref().map(|blend| (blend.frames_done, blend.frames_total)) else {
+    let Some((done, total)) = player
+        .blend
+        .as_ref()
+        .map(|blend| (blend.frames_done, blend.frames_total))
+    else {
         return PumpStatus::Idle;
     };
     if done >= total {
@@ -1163,7 +1195,12 @@ fn pump(
     }
 }
 
-fn fill_frames(active: &mut Active, dst_rate: u32, rate: f32, max_frames: usize) -> Result<Vec<f32>, String> {
+fn fill_frames(
+    active: &mut Active,
+    dst_rate: u32,
+    rate: f32,
+    max_frames: usize,
+) -> Result<Vec<f32>, String> {
     if max_frames == 0 {
         return Ok(Vec::new());
     }
@@ -1312,10 +1349,7 @@ fn push_stereo(pending: &mut VecDeque<f32>, samples: &[f32], channels: usize) {
 }
 
 fn frame_at(pending: &VecDeque<f32>, index: usize) -> Option<(f32, f32)> {
-    Some((
-        *pending.get(index * 2)?,
-        *pending.get(index * 2 + 1)?,
-    ))
+    Some((*pending.get(index * 2)?, *pending.get(index * 2 + 1)?))
 }
 
 fn hermite(y0: f32, y1: f32, y2: f32, y3: f32, t: f32) -> f32 {
@@ -1357,7 +1391,11 @@ fn clear_heard(shared: &Shared) {
     shared.generation.fetch_add(1, Ordering::AcqRel);
     queue_mut(shared).clear();
     spectrum_mut(shared).clear();
-    let fade = shared.device_rate.load(Ordering::Relaxed).clamp(8_000, 192_000) / 80;
+    let fade = shared
+        .device_rate
+        .load(Ordering::Relaxed)
+        .clamp(8_000, 192_000)
+        / 80;
     shared.fade_left.store(fade.max(1), Ordering::Relaxed);
 }
 
@@ -1371,7 +1409,11 @@ fn snapshot(shared: &Shared) -> PlaybackState {
     let error = lock_string(&shared.error).clone();
     let device_error = lock_string(&shared.device_error).clone();
     PlaybackState {
-        track_id: if track_id.is_empty() { None } else { Some(track_id) },
+        track_id: if track_id.is_empty() {
+            None
+        } else {
+            Some(track_id)
+        },
         title: lock_string(&shared.title).clone(),
         artist: lock_string(&shared.artist).clone(),
         cover_path: if cover.is_empty() { None } else { Some(cover) },
@@ -1430,7 +1472,11 @@ fn render(shared: &Shared, frames: usize) -> Vec<(f32, f32)> {
     let got = chunk.len() / 2;
     let gain = smooth_gain(shared, frames);
     let mut fade_left = shared.fade_left.load(Ordering::Relaxed);
-    let fade_len = shared.device_rate.load(Ordering::Relaxed).clamp(8_000, 192_000) / 80;
+    let fade_len = shared
+        .device_rate
+        .load(Ordering::Relaxed)
+        .clamp(8_000, 192_000)
+        / 80;
     let fade_len = fade_len.max(1) as f32;
     for index in 0..got {
         let mut left = chunk[index * 2] * gain;
@@ -1449,9 +1495,10 @@ fn render(shared: &Shared, frames: usize) -> Vec<(f32, f32)> {
         let dst = shared.device_rate.load(Ordering::Relaxed).max(1) as f64;
         let position = f64::from_bits(shared.position.load(Ordering::Relaxed));
         if shared.generation.load(Ordering::Acquire) == generation {
-            shared
-                .position
-                .store((position + got as f64 * rate / dst).to_bits(), Ordering::Relaxed);
+            shared.position.store(
+                (position + got as f64 * rate / dst).to_bits(),
+                Ordering::Relaxed,
+            );
         }
         if let Ok(mut spectrum) = shared.spectrum.try_lock() {
             for (left, right) in out.iter().take(got) {
@@ -1490,7 +1537,10 @@ fn shape(sample: f32) -> f32 {
 }
 
 fn queue_mut(shared: &Shared) -> MutexGuard<'_, VecDeque<f32>> {
-    shared.playback.lock().unwrap_or_else(|poison| poison.into_inner())
+    shared
+        .playback
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
 }
 
 fn spectrum_mut(shared: &Shared) -> MutexGuard<'_, VecDeque<f32>> {
@@ -1501,8 +1551,13 @@ fn spectrum_mut(shared: &Shared) -> MutexGuard<'_, VecDeque<f32>> {
 }
 
 fn smooth_gain(shared: &Shared, frames: usize) -> f32 {
-    let master = finite_unit(f32::from_bits(shared.volume_bits.load(Ordering::Relaxed)), 1.0);
-    let track = finite_track_gain(f32::from_bits(shared.track_gain_bits.load(Ordering::Relaxed)));
+    let master = finite_unit(
+        f32::from_bits(shared.volume_bits.load(Ordering::Relaxed)),
+        1.0,
+    );
+    let track = finite_track_gain(f32::from_bits(
+        shared.track_gain_bits.load(Ordering::Relaxed),
+    ));
     let target = master * track;
     let current = f32::from_bits(shared.gain_bits.load(Ordering::Relaxed));
     let step = (frames as f32 * 0.000_35).clamp(0.02, 0.25);
@@ -1637,7 +1692,9 @@ fn open_stream(shared: Arc<Shared>) -> Result<(Stream, u32), String> {
     let device = host
         .default_output_device()
         .ok_or("No audio device found.")?;
-    let supported = device.default_output_config().map_err(|err| err.to_string())?;
+    let supported = device
+        .default_output_config()
+        .map_err(|err| err.to_string())?;
     let sample_format = supported.sample_format();
     let rate = supported.sample_rate().0;
     let channels = supported.channels() as usize;
@@ -1791,8 +1848,7 @@ fn analyze(fft: &Arc<dyn Fft<f32>>, window: &[f32]) -> [f32; 64] {
         .enumerate()
         .map(|(index, sample)| {
             let weight = 0.5
-                - 0.5
-                    * (std::f32::consts::TAU * index as f32 / (window.len() as f32 - 1.0)).cos();
+                - 0.5 * (std::f32::consts::TAU * index as f32 / (window.len() as f32 - 1.0)).cos();
             Complex {
                 re: sample * weight,
                 im: 0.0,

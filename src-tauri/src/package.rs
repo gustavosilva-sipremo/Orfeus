@@ -28,7 +28,11 @@ pub fn export_package(
     write_package(&conn, &playlist_id, Path::new(&dest_path))
 }
 
-pub fn write_package(conn: &rusqlite::Connection, playlist_id: &str, dest: &Path) -> Result<(), String> {
+pub fn write_package(
+    conn: &rusqlite::Connection,
+    playlist_id: &str,
+    dest: &Path,
+) -> Result<(), String> {
     let playlist = library::query_playlist(conn, playlist_id)?.ok_or("Playlist not found.")?;
     if playlist.track_ids.is_empty() {
         return Err("This playlist has no tracks to export.".into());
@@ -69,10 +73,19 @@ pub fn write_package(conn: &rusqlite::Connection, playlist_id: &str, dest: &Path
             .extension()
             .and_then(|ext| ext.to_str())
             .unwrap_or("audio");
-        let file_name = format!("tracks/{:02}.{}.{}", index + 1, util::sanitize_name(&track.title), ext);
+        let file_name = format!(
+            "tracks/{:02}.{}.{}",
+            index + 1,
+            util::sanitize_name(&track.title),
+            ext
+        );
         let stamped = scratch.join(format!("{index}.{ext}"));
         fs::copy(&track.path, &stamped).map_err(|err| err.to_string())?;
-        let cover_file = track.cover_path.as_deref().map(Path::new).filter(|path| path.is_file());
+        let cover_file = track
+            .cover_path
+            .as_deref()
+            .map(Path::new)
+            .filter(|path| path.is_file());
         tags::write_tags(
             &stamped,
             &track.title,
@@ -212,7 +225,8 @@ fn copy_into_zip(
     options: SimpleFileOptions,
 ) -> Result<(), String> {
     let mut file = File::open(source).map_err(|err| err.to_string())?;
-    zip.start_file(name, options).map_err(|err| err.to_string())?;
+    zip.start_file(name, options)
+        .map_err(|err| err.to_string())?;
     std::io::copy(&mut file, zip).map_err(|err| err.to_string())?;
     Ok(())
 }
@@ -262,7 +276,9 @@ fn extract_audio(
             return Err("A track in the package is larger than 1 GB.".into());
         }
         hasher.update(&buf[..read]);
-        output.write_all(&buf[..read]).map_err(|err| err.to_string())?;
+        output
+            .write_all(&buf[..read])
+            .map_err(|err| err.to_string())?;
     }
     drop(output);
     let hash = hex::encode(hasher.finalize());
@@ -282,7 +298,8 @@ fn extract_cover(
     id: &str,
     playlist: bool,
 ) -> Result<Option<String>, String> {
-    let Some((bytes, ext)) = extract_bytes(archive, name, if playlist { "" } else { "covers/" })? else {
+    let Some((bytes, ext)) = extract_bytes(archive, name, if playlist { "" } else { "covers/" })?
+    else {
         return Ok(None);
     };
     let dir = if playlist {

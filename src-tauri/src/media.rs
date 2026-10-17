@@ -56,7 +56,9 @@ fn run(app: AppHandle) {
             cover_url: cover.as_deref(),
             duration: Some(Duration::from_secs_f64(snap.duration.max(0.0))),
         });
-        let progress = Some(MediaPosition(Duration::from_secs_f64(snap.position.max(0.0))));
+        let progress = Some(MediaPosition(Duration::from_secs_f64(
+            snap.position.max(0.0),
+        )));
         let playback = if snap.track_id.is_none() {
             MediaPlayback::Stopped
         } else if snap.playing {
@@ -120,7 +122,11 @@ fn handle(app: &AppHandle, event: souvlaki::MediaControlEvent) {
 
 #[cfg(target_os = "linux")]
 fn nonempty(value: &str) -> Option<&str> {
-    if value.trim().is_empty() { None } else { Some(value) }
+    if value.trim().is_empty() {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 #[cfg(target_os = "linux")]

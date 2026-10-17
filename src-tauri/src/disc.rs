@@ -5,8 +5,8 @@ use std::process::Command;
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter};
 
-use crate::AppState;
 use crate::models::OpticalDrive;
+use crate::AppState;
 
 const AUDIO_LIMIT_MS: i64 = 80 * 60 * 1000;
 const AUDIO_TRACKS: usize = 99;
@@ -39,7 +39,8 @@ pub fn list_drives() -> Result<Vec<OpticalDrive>, String> {
     if !output.status.success() {
         return Err("Could not list optical drives.".into());
     }
-    let parsed: Lsblk = serde_json::from_slice(&output.stdout).map_err(|_| "Could not read the drive list.".to_string())?;
+    let parsed: Lsblk = serde_json::from_slice(&output.stdout)
+        .map_err(|_| "Could not read the drive list.".to_string())?;
     let mut drives = Vec::new();
     collect(&parsed.blockdevices, &mut drives);
     Ok(drives)
@@ -51,7 +52,10 @@ fn collect(blocks: &[Block], drives: &mut Vec<OpticalDrive>) {
         if block.name.starts_with("sr") {
             drives.push(OpticalDrive {
                 device: format!("/dev/{}", block.name),
-                label: block.model.clone().unwrap_or_else(|| "Optical drive".into()),
+                label: block
+                    .model
+                    .clone()
+                    .unwrap_or_else(|| "Optical drive".into()),
                 size: block.size.clone().unwrap_or_default(),
             });
         }
@@ -62,7 +66,13 @@ fn collect(blocks: &[Block], drives: &mut Vec<OpticalDrive>) {
 }
 
 #[tauri::command]
-pub fn burn_disc(app: AppHandle, state: tauri::State<'_, AppState>, kind: String, device: String, track_ids: Vec<String>) -> Result<(), String> {
+pub fn burn_disc(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+    kind: String,
+    device: String,
+    track_ids: Vec<String>,
+) -> Result<(), String> {
     if !device_ok(&device) {
         return Err("Choose an optical drive from the list.".into());
     }
@@ -91,19 +101,37 @@ struct Job {
 }
 
 fn tracks(state: &tauri::State<'_, AppState>, ids: &[String]) -> Result<Vec<Job>, String> {
-    let conn = state.db.lock().map_err(|_| "The library is busy.".to_string())?;
+    let conn = state
+        .db
+        .lock()
+        .map_err(|_| "The library is busy.".to_string())?;
     let mut jobs = Vec::new();
     for id in ids {
         let row = conn
-            .query_row("SELECT title, path, duration_ms FROM tracks WHERE id = ?1", [id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
-            })
+            .query_row(
+                "SELECT title, path, duration_ms FROM tracks WHERE id = ?1",
+                [id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
+            )
             .map_err(|_| "A selected track is no longer in the library.".to_string())?;
         if !Path::new(&row.1).is_file() {
             return Err(format!("{} is missing from disk.", row.0));
         }
-        let size = std::fs::metadata(&row.1).map(|meta| meta.len()).unwrap_or(0);
-        jobs.push(Job { title: row.0, path: row.1, duration_ms: row.2, size });
+        let size = std::fs::metadata(&row.1)
+            .map(|meta| meta.len())
+            .unwrap_or(0);
+        jobs.push(Job {
+            title: row.0,
+            path: row.1,
+            duration_ms: row.2,
+            size,
+        });
     }
     Ok(jobs)
 }
@@ -112,7 +140,10 @@ fn burn(app: &AppHandle, dir: &Path, kind: &str, device: &str, jobs: &[Job]) -> 
     let _ = app.emit("disc://progress", "Preparing the tracks");
     let mut maps = Vec::new();
     for (index, job) in jobs.iter().enumerate() {
-        let ext = Path::new(&job.path).extension().and_then(|ext| ext.to_str()).unwrap_or("audio");
+        let ext = Path::new(&job.path)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("audio");
         let name = if kind == "audio" {
             disc_name(&job.title, index + 1)
         } else {
@@ -121,7 +152,17 @@ fn burn(app: &AppHandle, dir: &Path, kind: &str, device: &str, jobs: &[Job]) -> 
         let source = if kind == "audio" {
             let wav = dir.join(format!("{index:02}.wav"));
             let status = crate::util::command("ffmpeg")
-                .args(["-y", "-i", &job.path, "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le"])
+                .args([
+                    "-y",
+                    "-i",
+                    &job.path,
+                    "-ar",
+                    "44100",
+                    "-ac",
+                    "2",
+                    "-c:a",
+                    "pcm_s16le",
+                ])
                 .arg(&wav)
                 .status()
                 .map_err(|_| "Install ffmpeg to burn an audio CD.".to_string())?;
@@ -135,7 +176,14 @@ fn burn(app: &AppHandle, dir: &Path, kind: &str, device: &str, jobs: &[Job]) -> 
         maps.push((source, name));
     }
     let _ = app.emit("disc://progress", "Writing the disc");
-    let mut args = vec!["-outdev".into(), burn_target(device), "-blank".into(), "as_needed".into(), "-close".into(), "on".into()];
+    let mut args = vec![
+        "-outdev".into(),
+        burn_target(device),
+        "-blank".into(),
+        "as_needed".into(),
+        "-close".into(),
+        "on".into(),
+    ];
     for (source, name) in &maps {
         if kind == "audio" {
             args.push("-audio".into());
@@ -160,12 +208,19 @@ fn burn(app: &AppHandle, dir: &Path, kind: &str, device: &str, jobs: &[Job]) -> 
 }
 
 fn run_xorriso(args: &[String]) -> Result<(), String> {
-    let output = crate::util::command("xorriso").args(args).output().map_err(|_| "Install xorriso to burn a disc.".to_string())?;
+    let output = crate::util::command("xorriso")
+        .args(args)
+        .output()
+        .map_err(|_| "Install xorriso to burn a disc.".to_string())?;
     if output.status.success() {
         return Ok(());
     }
     let text = String::from_utf8_lossy(&output.stderr);
-    let line = text.lines().rev().find(|line| !line.trim().is_empty()).unwrap_or("The disc could not be written.");
+    let line = text
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("The disc could not be written.");
     Err(line.trim().to_string())
 }
 
@@ -209,57 +264,92 @@ fn capacity_error(kind: &str, jobs: &[Job]) -> Option<String> {
         return None;
     }
     let total: u64 = jobs.iter().map(|job| job.size).sum();
-    let (limit, label) = if kind == "dvd" { (DVD_BYTES, "DVD") } else { (CD_BYTES, "CD") };
+    let (limit, label) = if kind == "dvd" {
+        (DVD_BYTES, "DVD")
+    } else {
+        (CD_BYTES, "CD")
+    };
     if total > limit {
-        return Some(format!("These files are larger than a data {label} can hold."));
+        return Some(format!(
+            "These files are larger than a data {label} can hold."
+        ));
     }
     None
 }
 
+#[cfg(any(target_os = "windows", test))]
 fn console_text(bytes: &[u8]) -> String {
     let units = if bytes.starts_with(&[0xFF, 0xFE]) {
         Some(&bytes[2..])
-    } else if bytes.len() >= 4 && bytes.len() % 2 == 0 && bytes.iter().skip(1).step_by(2).all(|byte| *byte == 0) {
+    } else if bytes.len() >= 4
+        && bytes.len() % 2 == 0
+        && bytes.iter().skip(1).step_by(2).all(|byte| *byte == 0)
+    {
         Some(bytes)
     } else {
         None
     };
     if let Some(encoded) = units {
-        let wide: Vec<u16> = encoded.chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
+        let wide: Vec<u16> = encoded
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .collect();
         return String::from_utf16_lossy(&wide);
     }
-    String::from_utf8_lossy(bytes).trim_start_matches('\u{feff}').to_string()
+    String::from_utf8_lossy(bytes)
+        .trim_start_matches('\u{feff}')
+        .to_string()
 }
 
+#[cfg(any(target_os = "windows", test))]
 fn json_str<'a>(row: &'a serde_json::Value, name: &str) -> Option<&'a str> {
-    row.as_object()?.iter().find(|(key, _)| key.eq_ignore_ascii_case(name)).and_then(|(_, value)| value.as_str())
+    row.as_object()?
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case(name))
+        .and_then(|(_, value)| value.as_str())
 }
 
+#[cfg(any(target_os = "windows", test))]
 fn normalize_drive(raw: &str) -> Option<String> {
-    let text = raw.trim().trim_start_matches(r"\\.\").trim_end_matches(['\\', '/']);
+    let text = raw
+        .trim()
+        .trim_start_matches(r"\\.\")
+        .trim_end_matches(['\\', '/']);
     drive_letter(text).map(|letter| format!("{letter}:"))
 }
 
+#[cfg(any(target_os = "windows", test))]
 fn drives_from_windows_json(text: &str) -> Result<Vec<OpticalDrive>, String> {
     let text = text.trim();
     if text.is_empty() || text == "null" {
         return Ok(Vec::new());
     }
-    let value: serde_json::Value = serde_json::from_str(text).map_err(|_| "Could not read the drive list.".to_string())?;
+    let value: serde_json::Value =
+        serde_json::from_str(text).map_err(|_| "Could not read the drive list.".to_string())?;
     let rows = match value {
         serde_json::Value::Array(rows) => rows,
         other => vec![other],
     };
     let mut drives = Vec::new();
     for row in rows {
-        let raw = json_str(&row, "Drive").or_else(|| json_str(&row, "DeviceID")).unwrap_or("");
+        let raw = json_str(&row, "Drive")
+            .or_else(|| json_str(&row, "DeviceID"))
+            .unwrap_or("");
         let Some(device) = normalize_drive(raw) else {
             continue;
         };
         let name = json_str(&row, "Name").unwrap_or("Optical drive");
         let media = json_str(&row, "MediaType").unwrap_or("").trim();
-        let label = if media.is_empty() { name.to_string() } else { format!("{name} · {media}") };
-        drives.push(OpticalDrive { device, label, size: String::new() });
+        let label = if media.is_empty() {
+            name.to_string()
+        } else {
+            format!("{name} · {media}")
+        };
+        drives.push(OpticalDrive {
+            device,
+            label,
+            size: String::new(),
+        });
     }
     Ok(drives)
 }
@@ -293,7 +383,12 @@ mod tests {
     use super::*;
 
     fn job(minutes: i64, size: u64) -> Job {
-        Job { title: "Track".into(), path: "a.mp3".into(), duration_ms: minutes * 60 * 1000, size }
+        Job {
+            title: "Track".into(),
+            path: "a.mp3".into(),
+            duration_ms: minutes * 60 * 1000,
+            size,
+        }
     }
 
     #[test]
@@ -303,9 +398,16 @@ mod tests {
         assert_eq!(one[0].device, "E:");
         assert_eq!(one[0].label, "HL-DT-ST · DVD Writer");
         let many = drives_from_windows_json(r#"[{"Drive":"D:"},{"DeviceID":"F:"}]"#).unwrap();
-        assert_eq!(many.iter().map(|drive| drive.device.as_str()).collect::<Vec<_>>(), ["D:", "F:"]);
+        assert_eq!(
+            many.iter()
+                .map(|drive| drive.device.as_str())
+                .collect::<Vec<_>>(),
+            ["D:", "F:"]
+        );
         assert!(drives_from_windows_json("null").unwrap().is_empty());
-        assert!(drives_from_windows_json(r#"{"DeviceID":"\\\\.\\CDROM0"}"#).unwrap().is_empty());
+        assert!(drives_from_windows_json(r#"{"DeviceID":"\\\\.\\CDROM0"}"#)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -318,7 +420,10 @@ mod tests {
         let mut bom = vec![0xFF, 0xFE];
         bom.extend(wide);
         assert_eq!(console_text(&bom), "{}");
-        assert_eq!(console_text("{\"Drive\":\"G:\"}".as_bytes()).contains("G:"), true);
+        assert_eq!(
+            console_text("{\"Drive\":\"G:\"}".as_bytes()).contains("G:"),
+            true
+        );
     }
 
     #[test]
@@ -330,20 +435,36 @@ mod tests {
     #[test]
     fn audio_cd_and_data_discs_have_different_limits() {
         assert!(capacity_error("audio", &[job(70, 9_000_000_000)]).is_none());
-        assert!(capacity_error("audio", &[job(90, 1)]).unwrap().contains("80 minutes"));
+        assert!(capacity_error("audio", &[job(90, 1)])
+            .unwrap()
+            .contains("80 minutes"));
         assert!(capacity_error("cd", &[job(1, 500_000_000)]).is_none());
-        assert!(capacity_error("cd", &[job(1, 800_000_000)]).unwrap().contains("data CD"));
+        assert!(capacity_error("cd", &[job(1, 800_000_000)])
+            .unwrap()
+            .contains("data CD"));
         assert!(capacity_error("dvd", &[job(1, 4_000_000_000)]).is_none());
-        assert!(capacity_error("dvd", &[job(1, 5_000_000_000)]).unwrap().contains("data DVD"));
+        assert!(capacity_error("dvd", &[job(1, 5_000_000_000)])
+            .unwrap()
+            .contains("data DVD"));
     }
 }
 
 fn disc_name(title: &str, index: usize) -> String {
     let clean: String = title
         .chars()
-        .map(|char| if char.is_ascii_alphanumeric() || char == ' ' || char == '-' { char } else { ' ' })
+        .map(|char| {
+            if char.is_ascii_alphanumeric() || char == ' ' || char == '-' {
+                char
+            } else {
+                ' '
+            }
+        })
         .collect();
     let clean = clean.split_whitespace().collect::<Vec<_>>().join(" ");
     let clean: String = clean.chars().take(60).collect();
-    if clean.is_empty() { format!("{index:02} Track") } else { format!("{index:02} {clean}") }
+    if clean.is_empty() {
+        format!("{index:02} Track")
+    } else {
+        format!("{index:02} {clean}")
+    }
 }

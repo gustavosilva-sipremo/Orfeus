@@ -11,8 +11,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use walkdir::WalkDir;
 
 use crate::models::{
-    CoverDto, CoverHolder, ImportProgress, ImportReport, PlaylistDto, SavePlaylist, ShelfDto, TrackDto, UpdateTrack,
-    WatchedFolder,
+    CoverDto, CoverHolder, ImportProgress, ImportReport, PlaylistDto, SavePlaylist, ShelfDto,
+    TrackDto, UpdateTrack, WatchedFolder,
 };
 use crate::tags;
 use crate::util::{self, now_secs};
@@ -71,7 +71,9 @@ pub fn delete_cover(state: State<AppState>, path: String) -> Result<(), String> 
     let current = query_track(&conn, &playing)?;
     drop(conn);
     if let Some(dto) = current {
-        state.audio.set_display(&dto.id, &dto.title, &dto.artist, dto.cover_path.as_deref());
+        state
+            .audio
+            .set_display(&dto.id, &dto.title, &dto.artist, dto.cover_path.as_deref());
     }
     Ok(())
 }
@@ -81,9 +83,8 @@ pub fn stage_cover(state: State<AppState>, bytes: Vec<u8>) -> Result<String, Str
     if bytes.len() > 20 * 1024 * 1024 {
         return Err("The image is larger than 20 MB.".into());
     }
-    let ext = util::image_ext(&bytes).ok_or_else(|| {
-        "Unsupported image. Use JPG, PNG, WebP, GIF, or AVIF.".to_string()
-    })?;
+    let ext = util::image_ext(&bytes)
+        .ok_or_else(|| "Unsupported image. Use JPG, PNG, WebP, GIF, or AVIF.".to_string())?;
     let dir = state.data_dir.join("cover-drops");
     fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
     sweep_old_drops(&dir);
@@ -152,7 +153,11 @@ pub fn list_shelves(state: State<AppState>) -> Result<Vec<ShelfDto>, String> {
 }
 
 #[tauri::command]
-pub fn create_shelf(state: State<AppState>, name: String, kind: String) -> Result<ShelfDto, String> {
+pub fn create_shelf(
+    state: State<AppState>,
+    name: String,
+    kind: String,
+) -> Result<ShelfDto, String> {
     let name = name.trim();
     if name.is_empty() {
         return Err("Name the library.".into());
@@ -178,7 +183,10 @@ pub fn update_shelf(state: State<AppState>, id: String, kind: String) -> Result<
     let kind = shelf_kind(&kind);
     let conn = state.db.lock().map_err(|err| err.to_string())?;
     let changed = conn
-        .execute("UPDATE shelves SET kind = ?1 WHERE id = ?2", params![kind, &id])
+        .execute(
+            "UPDATE shelves SET kind = ?1 WHERE id = ?2",
+            params![kind, &id],
+        )
         .map_err(|err| err.to_string())?;
     if changed == 0 {
         return Err("That library is no longer here.".into());
@@ -205,8 +213,11 @@ pub fn delete_shelf(state: State<AppState>, id: String) -> Result<(), String> {
             |row| row.get(0),
         )
         .map_err(|err| err.to_string())?;
-    conn.execute("UPDATE tracks SET shelf_id = ?1 WHERE shelf_id = ?2", params![fallback, id])
-        .map_err(|err| err.to_string())?;
+    conn.execute(
+        "UPDATE tracks SET shelf_id = ?1 WHERE shelf_id = ?2",
+        params![fallback, id],
+    )
+    .map_err(|err| err.to_string())?;
     conn.execute(
         "UPDATE watched_folders SET shelf_id = ?1 WHERE shelf_id = ?2",
         params![fallback, id],
@@ -280,12 +291,9 @@ pub fn update_track(state: State<AppState>, input: UpdateTrack) -> Result<TrackD
     }
     let dto = query_track(&conn, &input.id)?.ok_or_else(|| "Track not found.".to_string())?;
     drop(conn);
-    state.audio.set_display(
-        &dto.id,
-        &dto.title,
-        &dto.artist,
-        dto.cover_path.as_deref(),
-    );
+    state
+        .audio
+        .set_display(&dto.id, &dto.title, &dto.artist, dto.cover_path.as_deref());
     Ok(dto)
 }
 
@@ -728,7 +736,9 @@ fn collapse_duplicate_audio(conn: &Connection, data_dir: &Path) -> Result<bool, 
         .prepare("SELECT id, path FROM tracks WHERE deleted_at IS NULL AND (content_hash IS NULL OR content_hash = '')")
         .map_err(|err| err.to_string())?;
     let pending = stmt
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
         .map_err(|err| err.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?;
@@ -775,9 +785,11 @@ fn collapse_duplicate_audio(conn: &Connection, data_dir: &Path) -> Result<bool, 
             .collect::<Result<Vec<_>, _>>()
             .map_err(|err| err.to_string())?;
         drop(rows);
-        let Some(keep) = tracks.iter().find(|(_, path, storage)| {
-            storage == "linked" && Path::new(path).is_file()
-        }).or_else(|| tracks.first()) else {
+        let Some(keep) = tracks
+            .iter()
+            .find(|(_, path, storage)| storage == "linked" && Path::new(path).is_file())
+            .or_else(|| tracks.first())
+        else {
             continue;
         };
         if tracks.len() > 1 {
@@ -835,7 +847,9 @@ fn find_track_for_hash(conn: &Connection, hash: &str) -> Result<Option<String>, 
         .prepare("SELECT id, path FROM tracks WHERE deleted_at IS NULL AND (content_hash IS NULL OR content_hash = '')")
         .map_err(|err| err.to_string())?;
     let pending = stmt
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
         .map_err(|err| err.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?;
@@ -1003,7 +1017,9 @@ pub fn refresh_watched(app: &AppHandle, state: &AppState) -> Result<usize, Strin
 
 fn watched_folders(conn: &Connection) -> Result<Vec<WatchedFolder>, String> {
     let mut stmt = conn
-        .prepare("SELECT path, recursive, shelf_id FROM watched_folders ORDER BY path COLLATE NOCASE")
+        .prepare(
+            "SELECT path, recursive, shelf_id FROM watched_folders ORDER BY path COLLATE NOCASE",
+        )
         .map_err(|err| err.to_string())?;
     let rows = stmt
         .query_map([], |row| {
@@ -1019,7 +1035,12 @@ fn watched_folders(conn: &Connection) -> Result<Vec<WatchedFolder>, String> {
     Ok(rows)
 }
 
-fn remember_watched(conn: &Connection, paths: &[String], recursive: bool, shelf_id: &str) -> Result<(), String> {
+fn remember_watched(
+    conn: &Connection,
+    paths: &[String],
+    recursive: bool,
+    shelf_id: &str,
+) -> Result<(), String> {
     for raw in paths {
         let path = PathBuf::from(raw);
         if !path.is_dir() {
@@ -1035,7 +1056,13 @@ fn remember_watched(conn: &Connection, paths: &[String], recursive: bool, shelf_
     Ok(())
 }
 
-fn import_one(conn: &Connection, data_dir: &Path, path: &Path, revive: bool, shelf_id: &str) -> Result<bool, String> {
+fn import_one(
+    conn: &Connection,
+    data_dir: &Path,
+    path: &Path,
+    revive: bool,
+    shelf_id: &str,
+) -> Result<bool, String> {
     let path_str = path.to_string_lossy().to_string();
     if revive {
         conn.execute("DELETE FROM dismissed_paths WHERE path = ?1", [&path_str])
@@ -1054,7 +1081,9 @@ fn import_one(conn: &Connection, data_dir: &Path, path: &Path, revive: bool, she
         }
     }
     let exists = conn
-        .query_row("SELECT 1 FROM tracks WHERE path = ?1", [&path_str], |_| Ok(()))
+        .query_row("SELECT 1 FROM tracks WHERE path = ?1", [&path_str], |_| {
+            Ok(())
+        })
         .optional()
         .map_err(|err| err.to_string())?;
     if exists.is_some() {
@@ -1209,19 +1238,29 @@ fn query_shelves(conn: &Connection) -> Result<Vec<ShelfDto>, String> {
 fn resolve_shelf(conn: &Connection, requested: Option<&str>) -> Result<String, String> {
     if let Some(id) = requested {
         let found: Option<String> = conn
-            .query_row("SELECT id FROM shelves WHERE id = ?1", [id], |row| row.get(0))
+            .query_row("SELECT id FROM shelves WHERE id = ?1", [id], |row| {
+                row.get(0)
+            })
             .optional()
             .map_err(|err| err.to_string())?;
         if let Some(id) = found {
             return Ok(id);
         }
     }
-    conn.query_row("SELECT id FROM shelves ORDER BY created_at LIMIT 1", [], |row| row.get(0))
-        .map_err(|err| err.to_string())
+    conn.query_row(
+        "SELECT id FROM shelves ORDER BY created_at LIMIT 1",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(|err| err.to_string())
 }
 
 fn shelf_kind(kind: &str) -> &'static str {
-    if kind == "podcast" { "podcast" } else { "music" }
+    if kind == "podcast" {
+        "podcast"
+    } else {
+        "music"
+    }
 }
 
 fn visible_track_ids(conn: &Connection, playlist_id: &str) -> Result<Vec<String>, String> {
@@ -1256,7 +1295,11 @@ fn track_ids_of(conn: &Connection, playlist_id: &str) -> Result<Vec<String>, Str
         .map_err(|err| err.to_string())
 }
 
-fn merge_playlist_ids(previous: &[String], incoming: &[String], trashed: &HashSet<String>) -> Vec<String> {
+fn merge_playlist_ids(
+    previous: &[String],
+    incoming: &[String],
+    trashed: &HashSet<String>,
+) -> Vec<String> {
     let active = incoming
         .iter()
         .filter(|id| !trashed.contains(*id))
@@ -1357,7 +1400,14 @@ fn saved_covers(conn: &Connection, data_dir: &Path) -> Result<Vec<CoverDto>, Str
                 .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|time| time.as_secs() as i64)
                 .unwrap_or(0);
-            groups.insert(stored.clone(), CoverGroup { path: stored, holders: Vec::new(), added_at });
+            groups.insert(
+                stored.clone(),
+                CoverGroup {
+                    path: stored,
+                    holders: Vec::new(),
+                    added_at,
+                },
+            );
         }
     }
     let mut tracks = conn
@@ -1391,7 +1441,13 @@ fn saved_covers(conn: &Connection, data_dir: &Path) -> Result<Vec<CoverDto>, Str
         .prepare("SELECT id, name, cover_path FROM playlists WHERE cover_path IS NOT NULL ORDER BY name COLLATE NOCASE")
         .map_err(|err| err.to_string())?;
     let playlist_rows = playlists
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)))
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
         .map_err(|err| err.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?;
@@ -1424,7 +1480,11 @@ fn saved_covers(conn: &Connection, data_dir: &Path) -> Result<Vec<CoverDto>, Str
     let mut covers: Vec<CoverDto> = groups
         .into_values()
         .map(|group| {
-            let titles: Vec<String> = group.holders.iter().map(|holder| holder.title.clone()).collect();
+            let titles: Vec<String> = group
+                .holders
+                .iter()
+                .map(|holder| holder.title.clone())
+                .collect();
             CoverDto {
                 path: group.path,
                 uses: titles.len() as u32,
@@ -1434,17 +1494,29 @@ fn saved_covers(conn: &Connection, data_dir: &Path) -> Result<Vec<CoverDto>, Str
             }
         })
         .collect();
-    covers.sort_by(|left, right| right.uses.cmp(&left.uses).then_with(|| left.path.cmp(&right.path)));
+    covers.sort_by(|left, right| {
+        right
+            .uses
+            .cmp(&left.uses)
+            .then_with(|| left.path.cmp(&right.path))
+    });
     Ok(covers)
 }
 
-fn collapse_duplicate_covers(conn: &Connection, data_dir: &Path, groups: &mut HashMap<String, CoverGroup>) {
+fn collapse_duplicate_covers(
+    conn: &Connection,
+    data_dir: &Path,
+    groups: &mut HashMap<String, CoverGroup>,
+) {
     let mut by_hash: HashMap<String, Vec<String>> = HashMap::new();
     for path in groups.keys() {
         let Ok(bytes) = fs::read(path) else {
             continue;
         };
-        by_hash.entry(hex::encode(Sha256::digest(bytes))).or_default().push(path.clone());
+        by_hash
+            .entry(hex::encode(Sha256::digest(bytes)))
+            .or_default()
+            .push(path.clone());
     }
     for paths in by_hash.into_values() {
         if paths.len() < 2 {
@@ -1452,7 +1524,12 @@ fn collapse_duplicate_covers(conn: &Connection, data_dir: &Path, groups: &mut Ha
         }
         let Some(keeper) = paths
             .iter()
-            .max_by_key(|path| groups.get(*path).map(|group| group.holders.len()).unwrap_or(0))
+            .max_by_key(|path| {
+                groups
+                    .get(*path)
+                    .map(|group| group.holders.len())
+                    .unwrap_or(0)
+            })
             .cloned()
         else {
             continue;
@@ -1461,8 +1538,14 @@ fn collapse_duplicate_covers(conn: &Connection, data_dir: &Path, groups: &mut Ha
             if path == keeper {
                 continue;
             }
-            let _ = conn.execute("UPDATE tracks SET cover_path = ?1 WHERE cover_path = ?2", params![keeper, path]);
-            let _ = conn.execute("UPDATE playlists SET cover_path = ?1 WHERE cover_path = ?2", params![keeper, path]);
+            let _ = conn.execute(
+                "UPDATE tracks SET cover_path = ?1 WHERE cover_path = ?2",
+                params![keeper, path],
+            );
+            let _ = conn.execute(
+                "UPDATE playlists SET cover_path = ?1 WHERE cover_path = ?2",
+                params![keeper, path],
+            );
             if let Some(group) = groups.remove(&path) {
                 if let Some(kept) = groups.get_mut(&keeper) {
                     kept.holders.extend(group.holders);
@@ -1481,7 +1564,10 @@ struct CoverGroup {
 
 fn is_saved_image_name(path: &Path) -> bool {
     matches!(
-        path.extension().and_then(|ext| ext.to_str()).map(|ext| ext.to_ascii_lowercase()).as_deref(),
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase())
+            .as_deref(),
         Some("png" | "jpg" | "jpeg" | "webp" | "gif" | "avif")
     )
 }
@@ -1534,9 +1620,8 @@ pub fn store_image(dir: &Path, id: &str, source: &Path) -> Result<String, String
     if bytes.len() > 20 * 1024 * 1024 {
         return Err("The image is larger than 20 MB.".into());
     }
-    let ext = util::image_ext(&bytes).ok_or_else(|| {
-        "Unsupported image. Use JPG, PNG, WebP, GIF, or AVIF.".to_string()
-    })?;
+    let ext = util::image_ext(&bytes)
+        .ok_or_else(|| "Unsupported image. Use JPG, PNG, WebP, GIF, or AVIF.".to_string())?;
     fs::create_dir_all(dir).map_err(|err| err.to_string())?;
     if let Some(existing) = identical_saved_image(dir, &bytes) {
         drop_owned_copies(dir, id, Some(Path::new(&existing)));
@@ -1583,10 +1668,18 @@ fn drop_owned_copies(dir: &Path, id: &str, keep: Option<&Path>) {
 
 fn release_cover(conn: &Connection, data_dir: &Path, path: &str) {
     let tracks: i64 = conn
-        .query_row("SELECT COUNT(*) FROM tracks WHERE cover_path = ?1", [path], |row| row.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM tracks WHERE cover_path = ?1",
+            [path],
+            |row| row.get(0),
+        )
         .unwrap_or(1);
     let playlists: i64 = conn
-        .query_row("SELECT COUNT(*) FROM playlists WHERE cover_path = ?1", [path], |row| row.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM playlists WHERE cover_path = ?1",
+            [path],
+            |row| row.get(0),
+        )
         .unwrap_or(1);
     if tracks + playlists == 0 {
         util::remove_inside(data_dir, path);
@@ -1622,7 +1715,11 @@ fn backfill_covers(conn: &Connection, data_dir: &Path, playing_id: &str) -> Resu
     drop(stmt);
     let mut changed = false;
     for (id, path, cover_path) in rows {
-        if cover_path.as_deref().is_some_and(|value| Path::new(value).is_file()) || seen.contains(&id) {
+        if cover_path
+            .as_deref()
+            .is_some_and(|value| Path::new(value).is_file())
+            || seen.contains(&id)
+        {
             continue;
         }
         if id == playing_id {
@@ -1670,7 +1767,13 @@ mod tests {
             &root,
             &copy,
             &hash,
-            OwnedMeta { title: "Song", artist: "", album: "", lyrics: "", synced_lyrics: "" },
+            OwnedMeta {
+                title: "Song",
+                artist: "",
+                album: "",
+                lyrics: "",
+                synced_lyrics: "",
+            },
             None,
         )
         .unwrap();
@@ -1689,7 +1792,9 @@ mod tests {
         )
         .unwrap();
         collapse_duplicate_audio(&conn, &root).unwrap();
-        let left: i64 = conn.query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0)).unwrap();
+        let left: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(left, 1);
         assert!(!owned.exists());
         let _ = fs::remove_dir_all(root);
@@ -1722,7 +1827,9 @@ mod tests {
         let audio = root.join("song.mp3");
         fs::write(&audio, b"audio").unwrap();
         assert!(import_one(&conn, &root, &audio, true, "").unwrap());
-        let id: String = conn.query_row("SELECT id FROM tracks", [], |row| row.get(0)).unwrap();
+        let id: String = conn
+            .query_row("SELECT id FROM tracks", [], |row| row.get(0))
+            .unwrap();
         trash_track(&conn, &id).unwrap();
         assert!(query_tracks(&conn).unwrap().is_empty());
         assert_eq!(query_trash(&conn).unwrap().len(), 1);
@@ -1745,7 +1852,10 @@ mod tests {
         let mut trashed = HashSet::new();
         trashed.insert("trash".into());
         let merged = merge_playlist_ids(&previous, &["b".into(), "a".into()], &trashed);
-        assert_eq!(merged, vec!["b".to_string(), "trash".to_string(), "a".to_string()]);
+        assert_eq!(
+            merged,
+            vec!["b".to_string(), "trash".to_string(), "a".to_string()]
+        );
     }
 
     #[test]
@@ -1775,7 +1885,8 @@ mod tests {
 
     #[test]
     fn deleting_a_cover_clears_every_track_that_uses_it() {
-        let root = std::env::temp_dir().join(format!("orfeus-cover-delete-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("orfeus-cover-delete-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(root.join("covers")).unwrap();
         let conn = crate::db::open(&root.join("library.db")).unwrap();
         let cover = root.join("covers").join("shared.jpg");
@@ -1794,7 +1905,11 @@ mod tests {
         assert_eq!(listed[0].holders.len(), 2);
         forget_cover(&conn, &root, &stored).unwrap();
         let left: i64 = conn
-            .query_row("SELECT COUNT(*) FROM tracks WHERE cover_path IS NOT NULL", [], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM tracks WHERE cover_path IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         assert_eq!(left, 0);
         assert!(!cover.exists());
