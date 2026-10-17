@@ -41,7 +41,7 @@ export function LightMenu({
             role="radio"
             aria-checked={selected}
             className={cn(
-              "relative flex h-14 w-full cursor-pointer items-center overflow-hidden rounded-md px-3 text-left text-base transition duration-300",
+              "relative flex h-14 w-full cursor-pointer items-center overflow-hidden rounded-md px-3 text-left text-base",
               selected ? "text-(--menu-accent)" : "text-muted-foreground",
             )}
             onClick={() => onValueChange(option.value)}
@@ -51,7 +51,7 @@ export function LightMenu({
         )
       })}
       <div className="light-menu-rail" aria-hidden>
-        {index >= 0 ? <div className="light-menu-glider" style={{ transform: `translateY(${index * 100}%)` }} /> : null}
+        <div className="light-menu-glider" style={{ transform: `translateY(${Math.max(index, 0) * 100}%)`, opacity: index >= 0 ? 1 : 0 }} />
       </div>
     </div>
   )

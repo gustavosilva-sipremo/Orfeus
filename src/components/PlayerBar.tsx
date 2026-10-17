@@ -89,7 +89,7 @@ export function PlayerBar() {
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="outline" size="sm" onClick={() => void cycleRate()} disabled={disabled} className="w-16">
+              <Button variant="outline" size="sm" onClick={() => void cycleRate()} disabled={disabled} className="w-20">
                 {rateLabel(rate)}
               </Button>
             </TooltipTrigger>

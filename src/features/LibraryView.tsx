@@ -1,12 +1,13 @@
 import { open } from "@tauri-apps/plugin-dialog"
 import { Disc, Download, FolderOpen, FolderSync, ListPlus, MoreHorizontal, Music, Pencil, SlidersHorizontal, Trash2, Upload, Youtube } from "lucide-react"
-import { lazy, Suspense, useEffect, useState } from "react"
+import { lazy, Suspense, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Slider } from "@/components/ui/slider"
 import { BrowseSkeleton } from "@/components/ui/skeleton"
 import { BurnDialog } from "@/features/BurnDialog"
+import { ExtractDialog } from "@/features/ExtractDialog"
 import { TrackBrowse } from "@/features/TrackBrowse"
 import * as api from "@/lib/api"
 import type { Track, WatchedFolder } from "@/lib/types"
@@ -48,6 +49,8 @@ export function LibraryView() {
   const [exportDir, setExportDir] = useState(() => localStorage.getItem(exportKey) ?? "")
   const [youtubeOpen, setYoutubeOpen] = useState(false)
   const [burnOpen, setBurnOpen] = useState(false)
+  const [extractIds, setExtractIds] = useState<string[]>([])
+  const sequenceRef = useRef<Track[]>([])
   const [playMode, setPlayMode] = useState<"one" | "sequence">(() => (localStorage.getItem(playKey) === "one" ? "one" : "sequence"))
 
   useEffect(() => {
@@ -112,6 +115,14 @@ export function LibraryView() {
     await exportTracks(ids, dest)
   }
 
+  function beginExport(ids: string[]) {
+    if (ids.length > 1) {
+      setExtractIds(ids)
+      return
+    }
+    void exportSelection(ids).catch(showError)
+  }
+
   async function saveGain(track: Track, gain: number) {
     await useLibrary.getState().updateTrack({
       id: track.id,
@@ -140,13 +151,20 @@ export function LibraryView() {
   function setMode(mode: "one" | "sequence") {
     localStorage.setItem(playKey, mode)
     setPlayMode(mode)
+    const player = usePlayer.getState()
+    if (!player.trackId || player.playlistId) return
+    const playing = tracks.find((track) => track.id === player.trackId)
+    if (!playing) return
+    const list = sequenceRef.current.some((track) => track.id === playing.id) ? sequenceRef.current : tracks
+    void player.retarget(mode === "one" ? [playing] : list)
   }
 
   function playVisible(visible: Track[], index: number) {
     const track = visible[index]
     if (!track) return
-    if (playMode === "one") void playTracks([track], 0)
-    else void playTracks(visible, index)
+    sequenceRef.current = visible
+    if (playMode === "one") void playTracks([track], 0, "off", null)
+    else void playTracks(visible, index, "off", null)
   }
 
   function toggle(id: string) {
@@ -160,13 +178,13 @@ export function LibraryView() {
           <h2 className="serif truncate text-2xl sm:text-3xl">{shelfName}</h2>
           <p className="text-base text-muted-foreground">{ready ? `${tracks.length} tracks · ${tally(tracks)}` : "Opening the library…"}</p>
         </div>
-        <div className="flex rounded-md border border-[#3a3a3a] bg-[#1c1c1c] p-1">
-          <button type="button" className={`h-9 cursor-pointer rounded px-3 text-base ${playMode === "one" ? "bg-white text-black" : "text-white"}`} onClick={() => setMode("one")}>One track</button>
-          <button type="button" className={`h-9 cursor-pointer rounded px-3 text-base ${playMode === "sequence" ? "bg-white text-black" : "text-white"}`} onClick={() => setMode("sequence")}>In order</button>
+        <div className="flex rounded-md border border-white/10 bg-black p-1">
+          <button type="button" className={`h-9 cursor-pointer rounded px-3 text-base ${playMode === "one" ? "bg-[#242424] text-white" : "text-white/40"}`} onClick={() => setMode("one")}>One track</button>
+          <button type="button" className={`h-9 cursor-pointer rounded px-3 text-base ${playMode === "sequence" ? "bg-[#242424] text-white" : "text-white/40"}`} onClick={() => setMode("sequence")}>In order</button>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline">Library</Button>
+            <Button variant="outline" className="border-white/10 bg-black/35 backdrop-blur-md hover:bg-black/55">Menu</Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={() => setYoutubeOpen(true)}>
@@ -185,7 +203,7 @@ export function LibraryView() {
               <FolderOpen className="size-4" />
               {exportDir ? "Change folder" : "Save location"}
             </DropdownMenuItem>
-            <DropdownMenuItem disabled={!selected.length} onSelect={() => void exportSelection(selected).catch(showError)}>
+            <DropdownMenuItem disabled={!selected.length} onSelect={() => beginExport(selected)}>
               <Download className="size-4" />
               Export
             </DropdownMenuItem>
@@ -196,6 +214,13 @@ export function LibraryView() {
           </DropdownMenuContent>
         </DropdownMenu>
         <BurnDialog open={burnOpen} trackIds={selected} onOpenChange={setBurnOpen} />
+        <ExtractDialog
+          open={extractIds.length > 0}
+          title="Export tracks"
+          hint="More than one track is saved as one zip in the folder you choose."
+          onOpenChange={(open) => { if (!open) setExtractIds([]) }}
+          onStart={(dir) => exportTracks(extractIds, dir)}
+        />
         {youtubeOpen ? (
           <Suspense fallback={null}>
             <YouTubeDialog open={youtubeOpen} onOpenChange={setYoutubeOpen} />
@@ -234,7 +259,7 @@ export function LibraryView() {
             { label: "Edit", icon: <Pencil className="size-4" />, onSelect: () => setEditingId(track.id) },
             { label: "Track volume", icon: <SlidersHorizontal className="size-4" />, onSelect: () => setVolumeTrack(track) },
             { label: "Add to playlist", icon: <ListPlus className="size-4" />, onSelect: () => setAddId(track.id) },
-            { label: "Export", icon: <Download className="size-4" />, onSelect: () => void exportSelection([track.id]).catch(showError) },
+            { label: "Export", icon: <Download className="size-4" />, onSelect: () => beginExport([track.id]) },
             { label: "Move to Trash", icon: <Trash2 className="size-4" />, onSelect: () => void deleteTrack(track.id).catch(showError) },
           ]}
           actions={(track) => (

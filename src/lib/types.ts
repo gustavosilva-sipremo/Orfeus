@@ -24,6 +24,7 @@ export type Shelf = {
   id: string
   name: string
   kind: ShelfKind
+  createdAt: number
 }
 
 export type Playlist = {
@@ -32,6 +33,7 @@ export type Playlist = {
   coverPath: string | null
   loopMode: LoopMode
   createdAt: number
+  favorite: boolean
   trackIds: string[]
 }
 
@@ -98,7 +100,7 @@ export type CoverHolder = {
   detail: string
 }
 
-export type SavedCover = { path: string; uses: number; label: string; holders: CoverHolder[] }
+export type SavedCover = { path: string; uses: number; label: string; addedAt: number; holders: CoverHolder[] }
 
 export type OpticalDrive = { device: string; label: string; size: string }
 

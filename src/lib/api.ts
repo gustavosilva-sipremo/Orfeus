@@ -153,6 +153,14 @@ export function listListens(from: number, to: number) {
   return call<Listen[]>("list_listens", { from, to })
 }
 
+export function clearListens(from: number, to: number) {
+  return call<void>("clear_listens", { from, to })
+}
+
+export function clearAllListens() {
+  return call<void>("clear_all_listens")
+}
+
 export function stageCover(bytes: Uint8Array) {
   return call<string>("stage_cover", { bytes: Array.from(bytes) })
 }
@@ -168,6 +176,7 @@ export function savePlaylist(input: {
   coverSource?: string | null
   clearCover?: boolean
   trackIds?: string[]
+  favorite?: boolean
 }) {
   return call<Playlist>("save_playlist", { input })
 }
@@ -202,6 +211,10 @@ export function fetchCover(url: string) {
 
 export function exportTracks(trackIds: string[], destDir: string) {
   return call<ExportReport>("export_tracks", { trackIds, destDir })
+}
+
+export function extractPlaylist(playlistId: string, destDir: string) {
+  return call<ExportReport>("extract_playlist", { playlistId, destDir })
 }
 
 export function revealPath(path: string) {
@@ -240,6 +253,10 @@ export function youtubeDownload(request: {
 
 export function youtubeReveal(path: string) {
   return call<void>("youtube_reveal", { path })
+}
+
+export function retarget(tracks: QueueTrack[], index: number) {
+  return call<void>("retarget", { tracks, index })
 }
 
 export function play(tracks: QueueTrack[], startIndex: number, loopMode: LoopMode) {

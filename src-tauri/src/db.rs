@@ -131,6 +131,7 @@ fn ensure_shelves(conn: &Connection) -> Result<(), String> {
         conn.execute("UPDATE tracks SET shelf_id = ?1 WHERE shelf_id = ''", [id])
             .map_err(|err| err.to_string())?;
     }
+    ensure_column(conn, "playlists", "favorite", "INTEGER NOT NULL DEFAULT 0")?;
     Ok(())
 }
 

@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Images, Trash2, X } from "lucide-react"
-import { useEffect, useState, type CSSProperties } from "react"
+import { useEffect, useMemo, useState, type CSSProperties } from "react"
 import { CubeLoader } from "@/components/kit/CubeLoader"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -16,6 +16,13 @@ export function CoverGallery() {
   const [viewing, setViewing] = useState<number | null>(null)
   const [pending, setPending] = useState<SavedCover | null>(null)
   const [removing, setRemoving] = useState(false)
+  const [order, setOrder] = useState<"newest" | "oldest" | "used">("newest")
+  const shown = useMemo(() => {
+    const next = [...covers]
+    if (order === "used") next.sort((left, right) => right.uses - left.uses || right.addedAt - left.addedAt)
+    else next.sort((left, right) => (order === "newest" ? right.addedAt - left.addedAt : left.addedAt - right.addedAt))
+    return next
+  }, [covers, order])
 
   useEffect(() => {
     if (!api.desktop()) {
@@ -40,25 +47,25 @@ export function CoverGallery() {
     }
   }, [])
 
-  const current = viewing == null ? null : covers[viewing]
+  const current = viewing == null ? null : shown[viewing]
 
   useEffect(() => {
     if (viewing == null) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setViewing(null)
-      if (event.key === "ArrowRight") setViewing((index) => (index == null ? index : (index + 1) % covers.length))
-      if (event.key === "ArrowLeft") setViewing((index) => (index == null ? index : (index - 1 + covers.length) % covers.length))
+      if (event.key === "ArrowRight") setViewing((index) => (index == null ? index : (index + 1) % shown.length))
+      if (event.key === "ArrowLeft") setViewing((index) => (index == null ? index : (index - 1 + shown.length) % shown.length))
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [covers.length, viewing])
+  }, [shown.length, viewing])
 
   async function removeCover() {
     if (!pending || removing) return
     setRemoving(true)
     try {
       await api.deleteCover(pending.path)
-      const next = covers.filter((cover) => cover.path !== pending.path)
+      const next = shown.filter((cover) => cover.path !== pending.path)
       setCovers(next)
       setViewing((index) => {
         if (index == null) return index
@@ -77,10 +84,24 @@ export function CoverGallery() {
   return (
     <section className="flex h-full min-h-0 flex-col">
       <header className="px-4 py-3 sm:px-6 sm:py-4">
-        <h2 className="serif text-2xl sm:text-3xl">Covers</h2>
-        <p className="text-base text-muted-foreground">
-          {ready ? (covers.length === 1 ? "1 saved image" : `${covers.length} saved images`) : "Opening the gallery…"}
-        </p>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="serif text-2xl sm:text-3xl">Covers</h2>
+            <p className="text-base text-muted-foreground">
+              {ready ? (covers.length === 1 ? "1 saved image" : `${covers.length} saved images`) : "Opening the gallery…"}
+            </p>
+          </div>
+          <select
+            className="h-11 cursor-pointer rounded-md border border-white/10 bg-black px-3 text-base scheme-dark"
+            value={order}
+            aria-label="Sort covers"
+            onChange={(event) => setOrder(event.target.value as "newest" | "oldest" | "used")}
+          >
+            <option value="newest">Newest added</option>
+            <option value="oldest">Oldest added</option>
+            <option value="used">Most used</option>
+          </select>
+        </div>
       </header>
       {!ready ? (
         <div className="flex flex-1 items-center justify-center">
@@ -94,7 +115,7 @@ export function CoverGallery() {
         </div>
       ) : (
         <ul className="grid min-h-0 flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] content-start gap-3 overflow-auto px-4 pb-6 sm:px-6">
-          {covers.map((cover, index) => (
+          {shown.map((cover, index) => (
             <li key={cover.path} style={{ contentVisibility: "auto", containIntrinsicSize: "12rem" }}>
               <div className="relative">
                 <button type="button" className="w-full cursor-pointer text-left" onClick={() => setViewing(index)}>

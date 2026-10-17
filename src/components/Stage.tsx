@@ -1,4 +1,4 @@
-import { Pause, Play, RotateCcw, RotateCw, SkipBack, SkipForward, X } from "lucide-react"
+import { Library, Music, Pause, Play, Podcast, RotateCcw, RotateCw, SkipBack, SkipForward, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { Cover } from "@/components/Cover"
 import { quietBands, StageCanvas } from "@/components/Visualizer"
@@ -41,17 +41,45 @@ export function Stage() {
     <div className={open ? "visible fixed inset-0 z-40 opacity-100" : "pointer-events-none invisible fixed inset-0 z-40 opacity-0"} aria-hidden={!open}>
       <div className="relative flex h-full flex-col bg-transparent">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_42%,rgba(0,0,0,0.62)_100%)]" />
-        <div className="relative z-10 flex shrink-0 flex-wrap items-center justify-end gap-2 p-3 sm:p-4">
+        <div className="relative z-10 flex shrink-0 flex-wrap items-center justify-between gap-2 p-3 sm:p-4">
+          <SourceBadge />
+          <div className="ml-auto flex items-center gap-2">
           <LayoutButton on={layout.lyrics} label="Lyrics" onClick={toggleLyrics} />
           <button type="button" className="flex size-11 cursor-pointer items-center justify-center rounded-md border border-[#3a3a3a] bg-[#1c1c1c] text-white" onClick={() => close(false)} aria-label="Close stage">
             <X className="size-6" />
           </button>
+          </div>
         </div>
         <div className={`relative z-10 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 pb-16 sm:px-6 sm:pb-20 lg:overflow-hidden ${layout.lyrics ? "lg:grid lg:grid-cols-[auto_minmax(0,1fr)] lg:items-center lg:gap-8" : "items-center justify-center"}`}>
           <ArtworkPanel live={open} />
           {layout.lyrics ? <LyricsPanel /> : null}
         </div>
       </div>
+    </div>
+  )
+}
+
+function SourceBadge() {
+  const playlistId = usePlayer((state) => state.playlistId)
+  const trackId = usePlayer((state) => state.trackId)
+  const playlist = useLibrary((state) => state.playlists.find((item) => item.id === playlistId))
+  const track = useLibrary((state) => state.tracks.find((item) => item.id === trackId))
+  const shelf = useLibrary((state) => state.shelves.find((item) => item.id === track?.shelfId))
+  if (playlist) {
+    return (
+      <div className="flex min-w-0 items-center gap-2 rounded-md border border-white/10 bg-black/40 px-2 py-1 backdrop-blur">
+        <Cover path={playlist.coverPath} className="size-8 rounded" />
+        <span className="truncate text-sm">{playlist.name}</span>
+      </div>
+    )
+  }
+  if (!shelf) return <span />
+  const primary = shelf.createdAt === Math.min(...useLibrary.getState().shelves.map((item) => item.createdAt))
+  const Icon = primary ? Library : shelf.kind === "podcast" ? Podcast : Music
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-md border border-white/10 bg-black/40 px-2 py-1 backdrop-blur">
+      <Icon className="size-5 shrink-0" />
+      <span className="truncate text-sm">{shelf.name}</span>
     </div>
   )
 }

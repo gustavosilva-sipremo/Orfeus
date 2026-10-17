@@ -47,6 +47,7 @@ enum Cmd {
     Previous,
     Stop,
     SetCrossfade(f32),
+    Retarget { tracks: Vec<QueueTrack>, index: usize },
     Describe {
         id: String,
         title: String,
@@ -218,6 +219,10 @@ impl AudioEngine {
             .map_err(|_| "The audio engine stopped.".to_string())
     }
 
+    pub fn retarget(&self, tracks: Vec<QueueTrack>, index: usize) -> Result<(), String> {
+        self.send(Cmd::Retarget { tracks, index })
+    }
+
     pub fn play(&self, request: PlayRequest) -> Result<(), String> {
         let device_error = lock_string(&self.shared.device_error).clone();
         if !device_error.is_empty() {
@@ -248,7 +253,7 @@ impl AudioEngine {
 
     pub fn set_rate(&self, rate: f32) -> Result<(), String> {
         let Some(rate) = allowed_rate(rate) else {
-            return Err("Use 0.5×, 1×, or 2×.".into());
+            return Err("Use 0.5×, 1×, 1.2×, 1.5×, 2×, −1.2×, or −1.5×.".into());
         };
         self.send(Cmd::SetRate(rate))
     }
@@ -302,6 +307,11 @@ impl AudioEngine {
 #[tauri::command]
 pub fn play(state: State<AppState>, request: PlayRequest) -> Result<(), String> {
     state.audio.play(request)
+}
+
+#[tauri::command]
+pub fn retarget(state: State<AppState>, tracks: Vec<QueueTrack>, index: usize) -> Result<(), String> {
+    state.audio.retarget(tracks, index)
 }
 
 #[tauri::command]
@@ -382,15 +392,8 @@ fn allowed_crossfade(seconds: f32) -> f32 {
 }
 
 fn allowed_rate(rate: f32) -> Option<f32> {
-    if (rate - 0.5).abs() < 0.02 {
-        Some(0.5)
-    } else if (rate - 1.0).abs() < 0.02 {
-        Some(1.0)
-    } else if (rate - 2.0).abs() < 0.02 {
-        Some(2.0)
-    } else {
-        None
-    }
+    const RATES: [f32; 7] = [0.5, 1.0, 1.2, 1.5, 2.0, -1.2, -1.5];
+    RATES.into_iter().find(|item| (item - rate).abs() < 0.02)
 }
 
 fn thread_main(rx: Receiver<Cmd>, shared: Arc<Shared>, app: AppHandle) {
@@ -448,9 +451,13 @@ fn thread_main(rx: Receiver<Cmd>, shared: Arc<Shared>, app: AppHandle) {
             PumpStatus::Eof => {
                 let drained = queue_mut(&shared).len() < 8;
                 if drained {
-                    let next = player.index + 1;
-                    if !open_from(&mut player, &shared, next) {
+                    if player.rate < 0.0 {
                         finish(&mut player, &shared);
+                    } else {
+                        let next = player.index + 1;
+                        if !open_from(&mut player, &shared, next) {
+                            finish(&mut player, &shared);
+                        }
                     }
                     emit_state(&app, &shared);
                 } else if let Err(TryRecvError::Disconnected) = wait_cmd(&rx, &mut player, &shared) {
@@ -541,6 +548,18 @@ fn handle(player: &mut Player, shared: &Shared, cmd: Cmd) {
         }
         Cmd::SetCrossfade(seconds) => {
             player.crossfade = allowed_crossfade(seconds);
+        }
+        Cmd::Retarget { tracks, index } => {
+            let current = lock_string(&shared.track_id).clone();
+            player.queue = tracks;
+            player.blend = None;
+            if let Some(found) = player.queue.iter().position(|track| track.id == current) {
+                player.index = found;
+            } else if !player.queue.is_empty() {
+                player.index = index.min(player.queue.len() - 1);
+            }
+            publish(player, shared);
+            sync_flags(player, shared);
         }
         Cmd::Next => {
             let start = match &player.blend {
@@ -850,11 +869,47 @@ fn pump_player(player: &mut Player, shared: &Shared, dst_rate: u32) -> PumpStatu
     };
     let rate = player.rate;
     let loop_mode = player.loop_mode;
+    if rate < 0.0 {
+        return reverse_chunk(active, shared, dst_rate, rate.abs());
+    }
     pump(active, shared, dst_rate, rate, loop_mode)
 }
 
+fn reverse_chunk(active: &mut Active, shared: &Shared, dst_rate: u32, speed: f32) -> PumpStatus {
+    let pos = f64::from_bits(shared.position.load(Ordering::Relaxed));
+    if pos <= 0.05 {
+        return PumpStatus::Eof;
+    }
+    let max_samples = (dst_rate as usize).saturating_mul(2);
+    let queued = queue_mut(shared).len();
+    if queued >= max_samples {
+        return PumpStatus::Buffered;
+    }
+    let room = ((max_samples - queued) / 2).clamp(1, 4096);
+    let seconds = room as f64 * f64::from(speed) / dst_rate.max(1) as f64;
+    let start = (pos - seconds).max(0.0);
+    if let Err(err) = seek_to(active, shared, start) {
+        return PumpStatus::Error(err);
+    }
+    shared.position.store(pos.to_bits(), Ordering::Relaxed);
+    match fill_frames(active, dst_rate, speed, room) {
+        Ok(produced) if !produced.is_empty() => {
+            let frames = produced.len() / 2;
+            let mut reversed = Vec::with_capacity(produced.len());
+            for index in (0..frames).rev() {
+                reversed.push(produced[index * 2]);
+                reversed.push(produced[index * 2 + 1]);
+            }
+            queue_mut(shared).extend(reversed);
+            PumpStatus::Pumped
+        }
+        Ok(_) => PumpStatus::Eof,
+        Err(err) => PumpStatus::Error(err),
+    }
+}
+
 fn should_crossfade(player: &Player, shared: &Shared, dst_rate: u32) -> bool {
-    if player.crossfade <= 0.05 || player.loop_mode == LoopMode::Track || player.current.is_none() {
+    if player.rate < 0.0 || player.crossfade <= 0.05 || player.loop_mode == LoopMode::Track || player.current.is_none() {
         return false;
     }
     let Some(active) = player.current.as_ref() else {

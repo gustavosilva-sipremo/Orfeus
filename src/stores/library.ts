@@ -57,8 +57,8 @@ type LibraryState = {
 
 function replacePlaylist(playlists: Playlist[], playlist: Playlist) {
   const exists = playlists.some((item) => item.id === playlist.id)
-  if (!exists) return [playlist, ...playlists]
-  return playlists.map((item) => (item.id === playlist.id ? playlist : item))
+  const next = exists ? playlists.map((item) => (item.id === playlist.id ? playlist : item)) : [playlist, ...playlists]
+  return next.sort((left, right) => Number(right.favorite) - Number(left.favorite) || right.createdAt - left.createdAt)
 }
 
 export const useLibrary = create<LibraryState>((set, get) => ({
@@ -209,7 +209,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     const trimmed = name.trim()
     if (!trimmed) return
     if (!api.desktop()) {
-      const shelf: Shelf = { id: `preview-${Date.now()}`, name: trimmed, kind: "music" }
+      const shelf: Shelf = { id: `preview-${Date.now()}`, name: trimmed, kind: "music", createdAt: Date.now() }
       set({ shelves: [...get().shelves, shelf], view: { kind: "library", id: shelf.id } })
       return
     }
@@ -245,6 +245,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
         coverPath: null,
         loopMode: "off",
         createdAt: Date.now(),
+        favorite: false,
         trackIds: [],
       }
       set({ playlists: [playlist, ...get().playlists], view: { kind: "playlist", id: playlist.id } })
@@ -265,6 +266,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
             ...playlist,
             name: input.name ?? playlist.name,
             loopMode: input.loopMode ?? playlist.loopMode,
+            favorite: input.favorite ?? playlist.favorite,
             coverPath: input.clearCover ? null : playlist.coverPath,
             trackIds: input.trackIds ?? playlist.trackIds,
           }
@@ -347,6 +349,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       })
     } catch (error) {
       set({ error: message(error) })
+      throw error
     } finally {
       set({ busy: null, exportProgress: null })
     }

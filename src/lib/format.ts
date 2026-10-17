@@ -54,22 +54,29 @@ export function crossfadeLabel(seconds: number) {
   return `${seconds}s`
 }
 
+const rates = [0.5, 1, 1.2, 1.5, 2, -1.2, -1.5]
+
 export function rateLabel(rate: number) {
-  if (rate < 0.75) return "½×"
-  if (rate > 1.5) return "2×"
-  return "1×"
+  const abs = Math.abs(rate)
+  const text = abs < 0.75 ? "½×" : abs < 1.1 ? "1×" : abs < 1.35 ? "1.2×" : abs < 1.75 ? "1.5×" : "2×"
+  return rate < 0 ? `−${text}` : text
 }
 
 export function nextRate(rate: number) {
-  if (rate < 0.75) return 1
-  if (rate > 1.5) return 0.5
-  return 2
+  const index = rates.findIndex((item) => Math.abs(item - rate) < 0.02)
+  return rates[(index + 1) % rates.length] ?? 1
 }
 
 export function loopLabel(mode: LoopMode) {
-  if (mode === "track") return "Track"
-  if (mode === "playlist") return "Playlist"
-  return "Off"
+  if (mode === "track") return "Repeat track"
+  if (mode === "playlist") return "Repeat playlist"
+  return "Play once"
+}
+
+export function loopHint(mode: LoopMode) {
+  if (mode === "track") return "This track starts again when it ends."
+  if (mode === "playlist") return "The queue starts again after the last track."
+  return "Playback stops after the last track."
 }
 
 export function nextLoop(mode: LoopMode): LoopMode {
@@ -79,7 +86,7 @@ export function nextLoop(mode: LoopMode): LoopMode {
 }
 
 export function isRecent(addedAt: number) {
-  return addedAt > 1_000_000_000 && Date.now() / 1000 - addedAt < 7 * 24 * 60 * 60
+  return addedAt > 1_000_000_000 && Date.now() / 1000 - addedAt < 10 * 60
 }
 
 export function artistLabel(artist: string) {

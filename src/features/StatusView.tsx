@@ -18,6 +18,7 @@ export function StatusView() {
   const [anchor, setAnchor] = useState(() => new Date())
   const [rows, setRows] = useState<Listen[]>([])
   const [ready, setReady] = useState(false)
+  const [reload, setReload] = useState(0)
   const range = useMemo(() => bounds(scope, anchor), [scope, anchor])
 
   useEffect(() => {
@@ -38,7 +39,7 @@ export function StatusView() {
     return () => {
       alive = false
     }
-  }, [range.from, range.to])
+  }, [range.from, range.to, reload])
 
   const buckets = useMemo(() => chartBuckets(scope, anchor, rows), [anchor, rows, scope])
   const top = useMemo(() => rank(rows).slice(0, 5), [rows])
@@ -53,6 +54,18 @@ export function StatusView() {
     setAnchor(next)
   }
 
+  async function clearHistory(all: boolean) {
+    const question = all ? "Clear every listening record?" : `Clear the history for ${periodLabel(scope, anchor)}?`
+    if (!window.confirm(question)) return
+    try {
+      if (all) await api.clearAllListens()
+      else await api.clearListens(range.from, range.to)
+      setReload((value) => value + 1)
+    } catch (error) {
+      useLibrary.setState({ error: message(error) })
+    }
+  }
+
   return (
     <section className="flex h-full min-h-0 flex-col overflow-auto">
       <header className="px-4 py-3 sm:px-6 sm:py-4">
@@ -65,6 +78,8 @@ export function StatusView() {
             {item === "day" ? "Day" : item === "month" ? "Month" : "Year"}
           </Button>
         ))}
+        <Button variant="outline" size="sm" disabled={!ready || !rows.length} onClick={() => void clearHistory(false)}>Clear this period</Button>
+        <Button variant="outline" size="sm" disabled={!ready} onClick={() => void clearHistory(true)}>Clear all history</Button>
         <div className="ml-auto flex items-center gap-1">
           <Button variant="ghost" size="icon" aria-label="Previous period" onClick={() => shift(-1)}>
             <ChevronLeft className="size-5" />
@@ -83,7 +98,7 @@ export function StatusView() {
         <div className="space-y-8 px-4 pb-8 sm:px-6">
           <section>
             <h3 className="mb-3 text-xs tracking-[0.16em] text-gold uppercase">Minutes</h3>
-            <MinutesChart buckets={buckets} />
+            <MinutesChart buckets={buckets} scope={scope} />
           </section>
           <section>
             <h3 className="mb-3 text-xs tracking-[0.16em] text-gold uppercase">Top 5</h3>
@@ -193,19 +208,23 @@ function rank(rows: Listen[]) {
   return [...grouped.values()].sort((left, right) => right.seconds - left.seconds || left.title.localeCompare(right.title, "pt"))
 }
 
-function MinutesChart({ buckets }: { buckets: { label: string; seconds: number }[] }) {
+function MinutesChart({ buckets, scope }: { buckets: { label: string; seconds: number }[]; scope: Scope }) {
   const max = Math.max(...buckets.map((bucket) => bucket.seconds), 1)
-  const step = buckets.length > 16 ? 5 : 1
+  const legend = scope === "day" ? "Each bar is one hour, from 00 to 23." : scope === "month" ? "Each bar is one day of the month." : "Each bar is one month."
   return (
-    <div className="flex h-44 items-end gap-1 rounded-xl border border-border bg-card/50 px-3 pt-4 pb-2">
-      {buckets.map((bucket, index) => (
-        <div key={`${bucket.label}-${index}`} className="flex h-full min-w-0 flex-1 flex-col justify-end gap-1">
-          <div className="flex min-h-0 flex-1 items-end">
-            <div className="w-full rounded-sm bg-foreground/85" style={{ height: `${Math.max(bucket.seconds > 0 ? 4 : 0, (bucket.seconds / max) * 100)}%` }} />
+    <div className="rounded-xl border border-border bg-card/50 px-3 pt-3 pb-2">
+      <p className="mb-2 text-xs text-muted-foreground">{legend} The number on a bar is the time listened.</p>
+      <div className="flex h-52 items-end gap-1">
+        {buckets.map((bucket, index) => (
+          <div key={`${bucket.label}-${index}`} className="flex h-full min-w-0 flex-1 flex-col justify-end gap-1" title={`${bucket.label}: ${formatListened(bucket.seconds)}`}>
+            <span className="truncate text-center text-[9px] leading-none text-foreground/80">{bucket.seconds > 0 ? formatListened(bucket.seconds) : ""}</span>
+            <div className="flex min-h-0 flex-1 items-end">
+              <div className="w-full rounded-sm bg-foreground/85" style={{ height: `${Math.max(bucket.seconds > 0 ? 4 : 0, (bucket.seconds / max) * 100)}%` }} />
+            </div>
+            <span className="h-4 truncate text-center text-[10px] text-muted-foreground">{bucket.label}</span>
           </div>
-          <span className="h-4 truncate text-center text-[10px] text-muted-foreground">{index % step === 0 ? bucket.label : ""}</span>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   )
 }

@@ -54,6 +54,7 @@ type PlayerState = PlaybackState & {
   queue: QueueTrack[]
   init: () => Promise<void>
   playTracks: (tracks: Track[], index: number, loopMode?: LoopMode, playlistId?: string | null) => Promise<void>
+  retarget: (tracks: Track[]) => Promise<void>
   toggle: () => Promise<void>
   seek: (seconds: number) => Promise<void>
   cycleRate: () => Promise<void>
@@ -201,6 +202,20 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       await api.play(queue, playableIndex, loopMode)
     } catch (error) {
       set({ error: message(error), playing: false })
+    }
+  },
+  retarget: async (tracks) => {
+    const state = get()
+    if (!state.trackId) return
+    const queue = tracks.filter((track) => !track.missing).map(toQueue)
+    if (!queue.some((track) => track.id === state.trackId)) return
+    const index = queue.findIndex((track) => track.id === state.trackId)
+    set({ queue, index, queueLength: queue.length })
+    if (!api.desktop()) return
+    try {
+      await api.retarget(queue, index)
+    } catch (error) {
+      set({ error: message(error) })
     }
   },
   toggle: async () => {

@@ -13,7 +13,8 @@ type Filter = "all" | "lyrics" | "cover" | "missing"
 type Sort = "manual" | "title" | "artist" | "album" | "duration" | "added" | "size"
 
 const legacyKey = "orfeus-listing"
-const selectClass = "h-11 cursor-pointer rounded-md border border-input bg-[#0c0c0c] px-3 text-base text-foreground [color-scheme:dark] [&>option]:bg-[#0c0c0c] [&>option]:text-foreground"
+const selectClass = "h-11 cursor-pointer rounded-md border border-white/10 bg-black px-3 text-base text-foreground [color-scheme:dark] [&>option]:bg-black [&>option]:text-foreground"
+const newTag = "mr-2 text-xs font-semibold tracking-[0.14em] text-amber-200 uppercase drop-shadow-[0_0_8px_rgba(252,211,77,0.95)]"
 
 function readChrome(listingKey: string): { mode: Mode; size: number; filter: Filter; sort: Sort } {
   try {
@@ -183,7 +184,7 @@ export function TrackBrowse({
               >
                 <Cover path={track.coverPath} className={`rounded ${currentId === track.id ? "ring-2 ring-white" : ""}`} style={{ width: cover, height: cover }} />
                 <span className="min-w-0">
-                  <span className={`block truncate ${size > 60 ? "text-lg" : "text-base"}`}>{isRecent(track.addedAt) ? <span className="mr-2 text-xs tracking-[0.14em] text-gold uppercase">New</span> : null}{track.title}</span>
+                  <span className={`block truncate ${size > 60 ? "text-lg" : "text-base"}`}>{isRecent(track.addedAt) ? <span className={newTag}>New</span> : null}{track.title}</span>
                   {currentId === track.id ? <span className="text-xs tracking-[0.18em] text-white uppercase">Playing</span> : null}
                   {Math.abs(track.gain - 1) > 0.02 ? <span className="ml-2 text-xs text-muted-foreground">{Math.round(track.gain * 100)}%</span> : null}
                   <span className="block truncate text-sm text-muted-foreground">
@@ -225,14 +226,14 @@ export function TrackBrowse({
                 <div className="relative">
                   <Cover path={track.coverPath} className={`aspect-square w-full rounded-xl ${currentId === track.id ? "ring-2 ring-white" : ""}`} />
                   {actions || (reorder && sort === "manual") ? (
-                    <span className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-background/80 p-1" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                    <span className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-background/80 py-1 pr-1 pl-3" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
                       {actions?.(track)}
                       {sort === "manual" ? reorder?.(track) : null}
                     </span>
                   ) : null}
                 </div>
                 {currentId === track.id ? <span className="mt-2 block text-xs tracking-[0.18em] text-white uppercase">Playing</span> : null}
-                <span className={`block truncate ${size > 60 ? "text-lg" : "text-base"} ${currentId === track.id ? "" : "mt-2"}`}>{isRecent(track.addedAt) ? <span className="mr-2 text-xs tracking-[0.14em] text-gold uppercase">New</span> : null}{track.title}</span>
+                <span className={`block truncate ${size > 60 ? "text-lg" : "text-base"} ${currentId === track.id ? "" : "mt-2"}`}>{isRecent(track.addedAt) ? <span className={newTag}>New</span> : null}{track.title}</span>
                 <span className="block truncate text-sm text-muted-foreground">{artistLabel(track.artist)}</span>
                 <span className="block truncate text-xs text-white/45" title={track.path}>{sourceLabel(track)}</span>
                 <RowSpectrum active={currentId === track.id} className="mt-2 h-8 w-full" />

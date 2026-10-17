@@ -1,4 +1,4 @@
-import { BarChart3, FolderArchive, Images, Keyboard, Music, Plus, Podcast, Trash2, X } from "lucide-react"
+import { BarChart3, FolderArchive, Images, Keyboard, Library, Music, Plus, Podcast, Star, Trash2, X } from "lucide-react"
 import { useState } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { Cover } from "@/components/Cover"
@@ -17,13 +17,13 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const shelves = useLibrary((state) => state.shelves)
   const playlists = useLibrary((state) => state.playlists)
   const tracks = useLibrary((state) => state.tracks)
-  const trashCount = useLibrary((state) => state.trash.length)
   const setView = useLibrary((state) => state.setView)
   const createPlaylist = useLibrary((state) => state.createPlaylist)
   const createShelf = useLibrary((state) => state.createShelf)
   const setShelfKind = useLibrary((state) => state.setShelfKind)
   const removeShelf = useLibrary((state) => state.removeShelf)
   const importPackage = useLibrary((state) => state.importPackage)
+  const savePlaylist = useLibrary((state) => state.savePlaylist)
   const [openNew, setOpenNew] = useState(false)
   const [openShelf, setOpenShelf] = useState(false)
   const [name, setName] = useState("")
@@ -36,7 +36,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       return
     }
     const picked = await open({
-      title: "Import package",
+      title: "Import playlist",
       filters: [{ name: "Orfeus package", extensions: ["orfeus"] }],
     })
     if (typeof picked !== "string") return
@@ -51,7 +51,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <h1 className="serif text-4xl italic">Orfeus</h1>
         </div>
       </div>
-      <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 scrollbar-gutter-stable">
+      <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-y-contain px-3 [scrollbar-color:rgba(255,255,255,0.28)_transparent] scrollbar-thin">
         <div className="flex items-center justify-between px-3">
           <span className="text-xs tracking-[0.22em] text-muted-foreground uppercase">Libraries</span>
           <Button variant="ghost" size="icon" onClick={() => setOpenShelf(true)} aria-label="New library">
@@ -68,6 +68,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           }}
           options={[
             ...shelves.map((shelf) => {
+              const primary = shelf.createdAt === Math.min(...shelves.map((item) => item.createdAt))
               const podcast = shelf.kind === "podcast"
               return {
                 value: shelf.id,
@@ -75,14 +76,15 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                   <span className="flex h-full w-full items-center gap-3">
                     <span
                       role="presentation"
-                      className="flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-white/10"
-                      aria-label={podcast ? "Use the music icon" : "Use the podcast icon"}
+                      className={`flex size-8 shrink-0 items-center justify-center rounded-md ${primary ? "" : "hover:bg-white/10"}`}
+                      aria-label={primary ? "Main library" : podcast ? "Use the music icon" : "Use the podcast icon"}
                       onClick={(event) => {
+                        if (primary) return
                         event.stopPropagation()
                         void setShelfKind(shelf.id, podcast ? "music" : "podcast").catch((reason: unknown) => useLibrary.setState({ error: message(reason) }))
                       }}
                     >
-                      {podcast ? <Podcast className="size-5" /> : <Music className="size-5" />}
+                      {primary ? <Library className="size-5" /> : podcast ? <Podcast className="size-5" /> : <Music className="size-5" />}
                     </span>
                     <span className="min-w-0 flex-1 truncate">{shelf.name}</span>
                     {shelves.length > 1 ? (
@@ -132,7 +134,6 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                     <Trash2 className="size-5" />
                   </span>
                   <span className="min-w-0 flex-1">Trash</span>
-                  <span className="text-sm text-muted-foreground">{trashCount}</span>
                 </span>
               ),
             },
@@ -164,9 +165,20 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                   label: (
                     <span className="flex h-full w-full items-center gap-3">
                       <Cover path={playlist.coverPath} className="size-8 shrink-0 rounded" />
-                      <span className="min-w-0">
+                      <span className="min-w-0 flex-1">
                         <span className="block truncate leading-tight">{playlist.name}</span>
                         <span className="block truncate text-xs leading-tight text-muted-foreground" title={summary}>{summary}</span>
+                      </span>
+                      <span
+                        role="presentation"
+                        className="flex size-8 items-center justify-center rounded-md hover:bg-white/10"
+                        aria-label={playlist.favorite ? "Remove from favorites" : "Pin as favorite"}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void savePlaylist({ id: playlist.id, favorite: !playlist.favorite }).catch((reason: unknown) => useLibrary.setState({ error: message(reason) }))
+                        }}
+                      >
+                        <Star className={`size-4 ${playlist.favorite ? "fill-amber-200 text-amber-200" : "text-white/40"}`} />
                       </span>
                     </span>
                   ),
@@ -179,7 +191,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       <div className="space-y-2 border-t border-white/10 p-3">
         <Button variant="outline" className="w-full" onClick={() => void onImportPackage().catch((error: unknown) => useLibrary.setState({ error: message(error) }))}>
           <FolderArchive className="size-5" />
-          Import package
+          Import playlist
         </Button>
         <Button variant="ghost" className="w-full" onClick={() => setShortcutsOpen(true)}>
           <Keyboard className="size-5" />

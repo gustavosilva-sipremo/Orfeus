@@ -36,6 +36,7 @@ pub struct PlaylistDto {
     pub cover_path: Option<String>,
     pub loop_mode: String,
     pub created_at: i64,
+    pub favorite: bool,
     pub track_ids: Vec<String>,
 }
 
@@ -71,6 +72,8 @@ pub struct SavePlaylist {
     pub clear_cover: bool,
     #[serde(default)]
     pub track_ids: Option<Vec<String>>,
+    #[serde(default)]
+    pub favorite: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -166,6 +169,7 @@ pub struct ShelfDto {
     pub id: String,
     pub name: String,
     pub kind: String,
+    pub created_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -183,6 +187,7 @@ pub struct CoverDto {
     pub path: String,
     pub uses: u32,
     pub label: String,
+    pub added_at: i64,
     pub holders: Vec<CoverHolder>,
 }
 

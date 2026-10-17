@@ -73,7 +73,9 @@ The AppImage and the release binary inside the project folder are build output. 
 
 ## Install on Windows
 
-Build the installer on a Windows 10 or Windows 11 machine. Orfeus plays through the Windows audio device and uses the system WebView2 runtime.
+Orfeus runs on **Windows 10 and Windows 11, 64-bit (x86_64)**. It does not run on 32-bit Windows or on Windows ARM. The installed app uses the system WebView2 runtime. The setup wizard downloads WebView2 when it is missing.
+
+Build the installer on a Windows 10 or Windows 11 64-bit machine.
 
 Install these once:
 
@@ -92,10 +94,10 @@ Set-ExecutionPolicy -Scope Process Bypass
 The script installs the npm packages and runs `npm run tauri build -- --bundles nsis`. That produces a setup wizard:
 
 ```text
-src-tauri\target\release\bundle\nsis\Orfeus_1.5.0_x64-setup.exe
+src-tauri\target\release\bundle\nsis\Orfeus_1.5.2_x64-setup.exe
 ```
 
-The version in the file name follows `version` in `src-tauri/tauri.conf.json`. Double-click the `.exe`. The wizard asks whether to install for the current user or for everyone, then copies Orfeus and adds it to the Start menu. You can copy that setup file to another PC and run it there without the source tree.
+The version in the file name follows `version` in `src-tauri/tauri.conf.json`. Double-click the `.exe`. The wizard asks whether to install for the current user or for everyone, then offers to open the bundled Python installer (`python-manager-26.4.msix`). That step is optional and is for YouTube import. The wizard then copies Orfeus and adds it to the Start menu. You can copy that setup file to another PC and run it there without the source tree. The setup itself is a 64-bit installer for Windows 10 and Windows 11.
 
 YouTube import on Windows needs Python (`py`, `python`, or `python3`) and `ffmpeg` on the PATH. Burning a disc needs `xorriso` and, for an audio CD, `ffmpeg`.
 

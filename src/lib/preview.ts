@@ -54,7 +54,7 @@ export const previewTracks: Track[] = [
   },
 ]
 
-export const previewShelves = [{ id: "preview-shelf", name: "Library", kind: "music" as const }]
+export const previewShelves = [{ id: "preview-shelf", name: "Library", kind: "music" as const, createdAt: 1 }]
 
 export const previewPlaylists: Playlist[] = [
   {
@@ -63,6 +63,7 @@ export const previewPlaylists: Playlist[] = [
     coverPath: null,
     loopMode: "playlist",
     createdAt: 1,
+    favorite: false,
     trackIds: ["preview-1", "preview-2"],
   },
 ]

@@ -169,6 +169,7 @@ pub fn create_shelf(state: State<AppState>, name: String, kind: String) -> Resul
         id,
         name: name.to_string(),
         kind: kind.to_string(),
+        created_at: now_secs(),
     })
 }
 
@@ -356,6 +357,13 @@ pub fn save_playlist(state: State<AppState>, input: SavePlaylist) -> Result<Play
         conn.execute(
             "UPDATE playlists SET loop_mode = ?1 WHERE id = ?2",
             params![util::normalize_loop(mode), input.id],
+        )
+        .map_err(|err| err.to_string())?;
+    }
+    if let Some(favorite) = input.favorite {
+        conn.execute(
+            "UPDATE playlists SET favorite = ?1 WHERE id = ?2",
+            params![favorite, input.id],
         )
         .map_err(|err| err.to_string())?;
     }
@@ -644,7 +652,7 @@ pub fn query_track(conn: &Connection, id: &str) -> Result<Option<TrackDto>, Stri
 pub fn query_playlists(conn: &Connection) -> Result<Vec<PlaylistDto>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, cover_path, loop_mode, created_at FROM playlists ORDER BY created_at DESC",
+            "SELECT id, name, cover_path, loop_mode, created_at, favorite FROM playlists ORDER BY favorite DESC, created_at DESC",
         )
         .map_err(|err| err.to_string())?;
     let ids = stmt
@@ -655,13 +663,14 @@ pub fn query_playlists(conn: &Connection) -> Result<Vec<PlaylistDto>, String> {
                 row.get::<_, Option<String>>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)? != 0,
             ))
         })
         .map_err(|err| err.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?;
     ids.into_iter()
-        .map(|(id, name, cover_path, loop_mode, created_at)| {
+        .map(|(id, name, cover_path, loop_mode, created_at, favorite)| {
             Ok(PlaylistDto {
                 track_ids: visible_track_ids(conn, &id)?,
                 id,
@@ -669,6 +678,7 @@ pub fn query_playlists(conn: &Connection) -> Result<Vec<PlaylistDto>, String> {
                 cover_path,
                 loop_mode,
                 created_at,
+                favorite,
             })
         })
         .collect()
@@ -677,7 +687,7 @@ pub fn query_playlists(conn: &Connection) -> Result<Vec<PlaylistDto>, String> {
 pub fn query_playlist(conn: &Connection, id: &str) -> Result<Option<PlaylistDto>, String> {
     let row = conn
         .query_row(
-            "SELECT id, name, cover_path, loop_mode, created_at FROM playlists WHERE id = ?1",
+            "SELECT id, name, cover_path, loop_mode, created_at, favorite FROM playlists WHERE id = ?1",
             [id],
             |row| {
                 Ok((
@@ -686,12 +696,13 @@ pub fn query_playlist(conn: &Connection, id: &str) -> Result<Option<PlaylistDto>
                     row.get::<_, Option<String>>(2)?,
                     row.get::<_, String>(3)?,
                     row.get::<_, i64>(4)?,
+                    row.get::<_, i64>(5)? != 0,
                 ))
             },
         )
         .optional()
         .map_err(|err| err.to_string())?;
-    let Some((id, name, cover_path, loop_mode, created_at)) = row else {
+    let Some((id, name, cover_path, loop_mode, created_at, favorite)) = row else {
         return Ok(None);
     };
     Ok(Some(PlaylistDto {
@@ -701,6 +712,7 @@ pub fn query_playlist(conn: &Connection, id: &str) -> Result<Option<PlaylistDto>
         cover_path,
         loop_mode,
         created_at,
+        favorite,
     }))
 }
 
@@ -1170,7 +1182,7 @@ fn map_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<TrackDto> {
 
 fn query_shelves(conn: &Connection) -> Result<Vec<ShelfDto>, String> {
     let mut stmt = conn
-        .prepare("SELECT id, name, kind FROM shelves ORDER BY created_at, name COLLATE NOCASE")
+        .prepare("SELECT id, name, kind, created_at FROM shelves ORDER BY created_at, name COLLATE NOCASE")
         .map_err(|err| err.to_string())?;
     let rows = stmt
         .query_map([], |row| {
@@ -1178,6 +1190,7 @@ fn query_shelves(conn: &Connection) -> Result<Vec<ShelfDto>, String> {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 kind: row.get(2)?,
+                created_at: row.get(3)?,
             })
         })
         .map_err(|err| err.to_string())?
@@ -1330,7 +1343,14 @@ fn saved_covers(conn: &Connection, data_dir: &Path) -> Result<Vec<CoverDto>, Str
                 continue;
             }
             let stored = path.to_string_lossy().to_string();
-            groups.insert(stored.clone(), CoverGroup { path: stored, holders: Vec::new() });
+            let added_at = entry
+                .metadata()
+                .ok()
+                .and_then(|meta| meta.modified().ok())
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|time| time.as_secs() as i64)
+                .unwrap_or(0);
+            groups.insert(stored.clone(), CoverGroup { path: stored, holders: Vec::new(), added_at });
         }
     }
     let mut tracks = conn
@@ -1388,6 +1408,7 @@ fn saved_covers(conn: &Connection, data_dir: &Path) -> Result<Vec<CoverDto>, Str
                 path: group.path,
                 uses: titles.len() as u32,
                 label: cover_label(&titles),
+                added_at: group.added_at,
                 holders: group.holders,
             }
         })
@@ -1399,6 +1420,7 @@ fn saved_covers(conn: &Connection, data_dir: &Path) -> Result<Vec<CoverDto>, Str
 struct CoverGroup {
     path: String,
     holders: Vec<CoverHolder>,
+    added_at: i64,
 }
 
 fn is_saved_image_name(path: &Path) -> bool {

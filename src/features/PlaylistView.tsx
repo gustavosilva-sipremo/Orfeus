@@ -1,4 +1,4 @@
-import { open, save } from "@tauri-apps/plugin-dialog"
+import { open } from "@tauri-apps/plugin-dialog"
 import { ArrowDown, ArrowUp, Disc, Package, Play, Trash2 } from "lucide-react"
 import { useEffect, useMemo, useState, type DragEvent } from "react"
 import { Cover } from "@/components/Cover"
@@ -7,11 +7,12 @@ import { BrowseSkeleton } from "@/components/ui/skeleton"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { BurnDialog } from "@/features/BurnDialog"
+import { ExtractDialog } from "@/features/ExtractDialog"
 import { CoverPicker } from "@/features/CoverPicker"
 import { TrackBrowse } from "@/features/TrackBrowse"
 import * as api from "@/lib/api"
 import { imageFileFromList, imageFromClipboard, isImagePath, stageImageFile, watchCoverDrop } from "@/lib/covers"
-import { artistLabel, formatDuration, loopLabel, nextLoop, sourceLabel, tally } from "@/lib/format"
+import { artistLabel, formatDuration, loopHint, loopLabel, nextLoop, sourceLabel, tally } from "@/lib/format"
 import type { Track } from "@/lib/types"
 import { message } from "@/lib/utils"
 import { useLibrary } from "@/stores/library"
@@ -26,7 +27,6 @@ export function PlaylistView({ id }: { id: string }) {
   const removeFromPlaylist = useLibrary((state) => state.removeFromPlaylist)
   const movePlaylistTrack = useLibrary((state) => state.movePlaylistTrack)
   const addToPlaylist = useLibrary((state) => state.addToPlaylist)
-  const exportPackage = useLibrary((state) => state.exportPackage)
   const playTracks = usePlayer((state) => state.playTracks)
   const currentId = usePlayer((state) => state.trackId)
   const [name, setName] = useState(playlist?.name ?? "")
@@ -38,6 +38,8 @@ export function PlaylistView({ id }: { id: string }) {
   const [savedOpen, setSavedOpen] = useState(false)
   const [coverDropping, setCoverDropping] = useState(false)
   const [burnOpen, setBurnOpen] = useState(false)
+  const [extractOpen, setExtractOpen] = useState(false)
+  const [coverArmed, setCoverArmed] = useState(false)
 
   const ordered = useMemo(() => {
     if (!playlist) return []
@@ -55,7 +57,7 @@ export function PlaylistView({ id }: { id: string }) {
 
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
-      if (useLibrary.getState().editingId) return
+      if (!coverArmed || useLibrary.getState().editingId) return
       const target = event.target as HTMLElement | null
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return
       const file = imageFromClipboard(event.clipboardData)
@@ -67,7 +69,7 @@ export function PlaylistView({ id }: { id: string }) {
     }
     window.addEventListener("paste", onPaste)
     return () => window.removeEventListener("paste", onPaste)
-  }, [id])
+  }, [coverArmed, id])
 
   if (!ready) {
     return (
@@ -111,25 +113,12 @@ export function PlaylistView({ id }: { id: string }) {
     await savePlaylist({ id: current.id, coverSource: pickedCover })
   }
 
-  async function exportPack() {
-    if (!api.desktop()) {
-      useLibrary.setState({ notice: "Package export opens in the desktop app." })
-      return
-    }
-    const dest = await save({
-      title: "Export package",
-      defaultPath: `${current.name}.orfeus`,
-      filters: [{ name: "Orfeus package", extensions: ["orfeus"] }],
-    })
-    if (!dest) return
-    await exportPackage(current.id, dest)
-  }
-
   return (
     <section className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-end gap-3 px-4 py-4 sm:gap-4 sm:px-6 sm:py-5">
         <div
-          className={`shrink-0 rounded-xl ${coverDropping ? "ring-2 ring-white" : ""}`}
+          className={`flex w-44 shrink-0 flex-col items-center rounded-xl p-2 text-center ${coverDropping || coverArmed ? "ring-2 ring-white" : ""}`}
+          onClick={() => setCoverArmed(true)}
           onDragEnter={(event) => {
             event.preventDefault()
             setCoverDropping(true)
@@ -139,9 +128,13 @@ export function PlaylistView({ id }: { id: string }) {
           onDrop={(event) => void dropCover(event)}
         >
           <button type="button" onClick={() => void changeCover().catch(showError)} className="cursor-pointer">
-            <Cover path={playlist.coverPath} className="size-28 rounded-xl" />
+            <Cover path={playlist.coverPath} className="size-36 rounded-xl" />
           </button>
-          <Button variant="ghost" size="sm" className="mt-2 w-full" onClick={() => setSavedOpen(true)}>Saved</Button>
+          <p className="mt-2 text-xs text-muted-foreground">Click here, then Ctrl+V, or drop an image.</p>
+          <div className="mt-2 flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => void changeCover().catch(showError)}>File</Button>
+            <Button variant="ghost" size="sm" onClick={() => setSavedOpen(true)}>Saved</Button>
+          </div>
         </div>
         <CoverPicker open={savedOpen} onOpenChange={setSavedOpen} onPick={(path) => void savePlaylist({ id, coverSource: path }).catch(showError)} />
         <div className="min-w-0 flex-1">
@@ -163,13 +156,13 @@ export function PlaylistView({ id }: { id: string }) {
             <Play className="size-5" />
             Play
           </Button>
-          <Button variant="outline" onClick={() => void savePlaylist({ id: playlist.id, loopMode: nextLoop(playlist.loopMode) }).catch(showError)}>
+          <Button variant="outline" title={loopHint(playlist.loopMode)} onClick={() => void savePlaylist({ id: playlist.id, loopMode: nextLoop(playlist.loopMode) }).catch(showError)}>
             {loopLabel(playlist.loopMode)}
           </Button>
           <Button variant="outline" onClick={() => setAdding(true)}>Add</Button>
-          <Button variant="outline" onClick={() => void exportPack().catch(showError)}>
+          <Button variant="outline" disabled={!ordered.length} onClick={() => setExtractOpen(true)}>
             <Package className="size-5" />
-            Package
+            Extract playlist
           </Button>
           <Button variant="outline" disabled={!ordered.length} onClick={() => setBurnOpen(true)}>
             <Disc className="size-5" />
@@ -181,6 +174,17 @@ export function PlaylistView({ id }: { id: string }) {
         </div>
       </header>
       <BurnDialog open={burnOpen} trackIds={ordered.map((track) => track.id)} onOpenChange={setBurnOpen} />
+      <ExtractDialog
+        open={extractOpen}
+        title="Extract playlist"
+        hint="Tracks are saved as 01. Track name, then 02, in the folder you choose."
+        onOpenChange={setExtractOpen}
+        onStart={async (dir) => {
+          const report = await api.extractPlaylist(playlist.id, dir)
+          useLibrary.setState({ notice: report.exported === 1 ? "1 track extracted." : `${report.exported} tracks extracted.` })
+          if (report.errors[0]) useLibrary.setState({ error: report.errors[0] })
+        }}
+      />
       <TrackBrowse
         tracks={ordered}
         currentId={currentId}

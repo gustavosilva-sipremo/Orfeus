@@ -210,16 +210,14 @@ export function EditorSheet() {
             onDragLeave={() => setCoverDropping(false)}
             onDrop={dropImage}
           >
-            <h3 className="text-sm tracking-[0.16em] text-gold uppercase">Artwork</h3>
-            <div className="flex items-end gap-3">
-              <Cover path={preview} className="size-24 rounded-lg" />
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={() => void chooseCover()}>File</Button>
-                <Button variant="outline" size="sm" onClick={() => setSavedOpen(true)}>Saved</Button>
-                <Button variant="ghost" size="sm" onClick={() => { setClearCover(true); setCoverSource(null) }}>Remove</Button>
-              </div>
+            <h3 className="text-center text-sm tracking-[0.16em] text-gold uppercase">Artwork</h3>
+            <Cover path={preview} className="mx-auto size-40 rounded-xl" />
+            <p className="text-center text-sm text-muted-foreground">Click this section, then press Ctrl+V, or drop an image here. You can also pick a file or a cover already in the gallery. A square picture, 1400×1400 or larger, works best.</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => void chooseCover()}>File</Button>
+              <Button variant="outline" size="sm" onClick={() => setSavedOpen(true)}>Saved</Button>
+              <Button variant="ghost" size="sm" onClick={() => { setClearCover(true); setCoverSource(null) }}>Remove</Button>
             </div>
-            <p className="text-sm text-muted-foreground">Paste a copied image, drop one here, or reuse a cover from the gallery. A square picture, 1400×1400 or larger, works best.</p>
           </section>
           <CoverPicker
             open={savedOpen}

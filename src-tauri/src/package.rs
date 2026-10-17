@@ -64,7 +64,7 @@ pub fn export_package(
             .extension()
             .and_then(|ext| ext.to_str())
             .unwrap_or("audio");
-        let file_name = format!("tracks/{:02}.{}", index + 1, ext);
+        let file_name = format!("tracks/{:02}.{}.{}", index + 1, util::sanitize_name(&track.title), ext);
         let stamped = scratch.join(format!("{index}.{ext}"));
         fs::copy(&track.path, &stamped).map_err(|err| err.to_string())?;
         let cover_file = track.cover_path.as_deref().map(Path::new).filter(|path| path.is_file());

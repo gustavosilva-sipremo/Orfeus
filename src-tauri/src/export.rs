@@ -1,4 +1,5 @@
-use std::fs;
+use std::fs::{self, File};
+use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
@@ -7,6 +8,9 @@ use std::io::ErrorKind;
 use std::process::Stdio;
 
 use tauri::{AppHandle, Emitter, State};
+
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
 
 use crate::library;
 use crate::models::{ExportProgress, ExportReport};
@@ -24,6 +28,9 @@ pub fn export_tracks(
     let dest = Path::new(&dest_dir);
     if !dest.is_dir() {
         return Err("Choose a destination folder.".into());
+    }
+    if track_ids.len() > 1 {
+        return export_archive(&app, &state, &track_ids, dest);
     }
     let conn = state.db.lock().map_err(|err| err.to_string())?;
     let total = track_ids.len();
@@ -86,6 +93,88 @@ pub fn export_tracks(
         errors,
         dest_dir,
     })
+}
+
+fn export_archive(app: &AppHandle, state: &State<AppState>, track_ids: &[String], dest: &Path) -> Result<ExportReport, String> {
+    let conn = state.db.lock().map_err(|err| err.to_string())?;
+    let archive = unique_path(dest, "Orfeus.zip");
+    let file = File::create(&archive).map_err(|err| err.to_string())?;
+    let mut zip = ZipWriter::new(file);
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    let total = track_ids.len();
+    let mut exported = 0;
+    let mut errors = Vec::new();
+    let scratch = std::env::temp_dir().join(format!("orfeus-export-{}", std::process::id()));
+    fs::create_dir_all(&scratch).map_err(|err| err.to_string())?;
+    for (index, id) in track_ids.iter().enumerate() {
+        let Some(track) = library::query_track(&conn, id)? else {
+            errors.push(format!("Track {id} was not found."));
+            continue;
+        };
+        let _ = app.emit(
+            "export://progress",
+            ExportProgress { done: index, total, current: track.title.clone() },
+        );
+        if track.missing || !Path::new(&track.path).is_file() {
+            errors.push(format!("\"{}\" is no longer on disk.", track.title));
+            continue;
+        }
+        let ext = Path::new(&track.path).extension().and_then(|ext| ext.to_str()).unwrap_or("audio");
+        let name = format!("{:02}.{}.{}", index + 1, sanitize_name(&track.title), ext);
+        let staged = scratch.join(format!("{index}.{ext}"));
+        fs::copy(&track.path, &staged).map_err(|err| err.to_string())?;
+        let cover = track.cover_path.as_deref().map(Path::new).filter(|path| path.is_file());
+        let _ = tags::write_tags(&staged, &track.title, &track.artist, &track.album, &track.lyrics, &track.synced_lyrics, cover);
+        let bytes = fs::read(&staged).map_err(|err| err.to_string())?;
+        zip.start_file(&name, stored).map_err(|err| err.to_string())?;
+        zip.write_all(&bytes).map_err(|err| err.to_string())?;
+        exported += 1;
+    }
+    zip.finish().map_err(|err| err.to_string())?;
+    let _ = fs::remove_dir_all(&scratch);
+    let _ = app.emit("export://progress", ExportProgress { done: total, total, current: String::new() });
+    Ok(ExportReport {
+        exported,
+        errors,
+        dest_dir: dest.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn extract_playlist(app: AppHandle, state: State<AppState>, playlist_id: String, dest_dir: String) -> Result<ExportReport, String> {
+    let dest = Path::new(&dest_dir);
+    if !dest.is_dir() {
+        return Err("Choose a destination folder.".into());
+    }
+    let conn = state.db.lock().map_err(|err| err.to_string())?;
+    let playlist = library::query_playlist(&conn, &playlist_id)?.ok_or("Playlist not found.")?;
+    let ids = playlist.track_ids;
+    let total = ids.len();
+    if total == 0 {
+        return Err("This playlist has no tracks to extract.".into());
+    }
+    let mut exported = 0;
+    let mut errors = Vec::new();
+    for (index, id) in ids.iter().enumerate() {
+        let Some(track) = library::query_track(&conn, id)? else {
+            errors.push(format!("Track {id} was not found."));
+            continue;
+        };
+        let _ = app.emit("export://progress", ExportProgress { done: index, total, current: track.title.clone() });
+        if track.missing || !Path::new(&track.path).is_file() {
+            errors.push(format!("\"{}\" is no longer on disk.", track.title));
+            continue;
+        }
+        let ext = Path::new(&track.path).extension().and_then(|ext| ext.to_str()).unwrap_or("audio");
+        let file_name = format!("{:02}.{}.{}", index + 1, sanitize_name(&track.title), ext);
+        let target = unique_path(dest, &file_name);
+        fs::copy(&track.path, &target).map_err(|err| err.to_string())?;
+        let cover = track.cover_path.as_deref().map(Path::new).filter(|path| path.is_file());
+        let _ = tags::write_tags(&target, &track.title, &track.artist, &track.album, &track.lyrics, &track.synced_lyrics, cover);
+        exported += 1;
+    }
+    let _ = app.emit("export://progress", ExportProgress { done: total, total, current: String::new() });
+    Ok(ExportReport { exported, errors, dest_dir })
 }
 
 #[tauri::command]
@@ -159,8 +248,8 @@ fn open_graphical_folder(path: &Path) -> Result<(), String> {
     let path_arg = path.as_os_str();
     let mut last_error = None;
     for (program, args, wait) in [
-        ("gio", vec![std::ffi::OsStr::new("open"), path_arg], true),
-        ("xdg-open", vec![path_arg], true),
+        ("gio", vec![std::ffi::OsStr::new("open"), path_arg], false),
+        ("xdg-open", vec![path_arg], false),
         ("nautilus", vec![path_arg], false),
         ("dolphin", vec![path_arg], false),
         ("nemo", vec![path_arg], false),

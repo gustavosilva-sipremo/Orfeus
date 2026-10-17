@@ -50,6 +50,22 @@ fn save_listen(conn: &Connection, input: &RecordListen) -> Result<i64, String> {
     Ok(conn.last_insert_rowid())
 }
 
+#[tauri::command]
+pub fn clear_listens(state: State<AppState>, from: i64, to: i64) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|err| err.to_string())?;
+    conn.execute("DELETE FROM plays WHERE played_at >= ?1 AND played_at < ?2", params![from, to])
+        .map(|_| ())
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn clear_all_listens(state: State<AppState>) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|err| err.to_string())?;
+    conn.execute("DELETE FROM plays", [])
+        .map(|_| ())
+        .map_err(|err| err.to_string())
+}
+
 fn query_listens(conn: &Connection, from: i64, to: i64) -> Result<Vec<ListenDto>, String> {
     let mut stmt = conn
         .prepare(
