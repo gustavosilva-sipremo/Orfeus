@@ -541,10 +541,17 @@ async fn download_bytes(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, 
 }
 
 fn write_cover(data_dir: &Path, bytes: &[u8]) -> Result<String, String> {
-    let dir = data_dir.join("covers");
+    let dir = data_dir.join("cover-drops");
     std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
-    let id = format!("incoming-{}", uuid::Uuid::new_v4());
-    let dest = dir.join(format!("{id}.{}", util::sniff_ext(bytes)));
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() && std::fs::read(&path).ok().as_deref() == Some(bytes) {
+                return Ok(path.to_string_lossy().to_string());
+            }
+        }
+    }
+    let dest = dir.join(format!("{}.{}", uuid::Uuid::new_v4(), util::sniff_ext(bytes)));
     std::fs::write(&dest, bytes).map_err(|err| err.to_string())?;
     Ok(dest.to_string_lossy().to_string())
 }

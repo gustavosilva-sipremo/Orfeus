@@ -1,62 +1,91 @@
 # Orfeus
 
-Orfeus is a local music player for Linux and Windows. It plays files you already have on disk: import tracks or a folder, edit titles, covers, and lyrics, build playlists, and export a playlist as one `.orfeus` package. The stage can show the cover, a spectrum, and timed lyrics in any combination.
+Orfeus is a desktop music player for the files you already have. It stays on your computer: the library, covers, lyrics, and listening history live in a local database, and playback goes through the system audio device.
 
-Paste a YouTube link from the library to save it as a 320 kbps MP3 from the best available audio. You choose whether to keep the video, which resolution to keep, and the folders for audio and video. If you do not keep the video, only the MP3 is stored. This step needs Python 3 and ffmpeg (`python` and `ffmpeg` on CachyOS).
+Version 1.6.1. The interface is in English.
+
+## What it does
+
+- Import songs or a whole folder into one or more libraries. The first library keeps a library icon. Extra libraries can be marked as music or a podcast.
+- Play the visible list in order, or keep the queue on the current track. Changing that choice takes effect during the song that is already playing.
+- Change speed to 0.5×, 1×, 1.2×, 1.5×, and 2×, and play backward at −1.2× and −1.5×.
+- Edit a track’s title, artist, album, volume, lyrics, and cover. A cover can be pasted with Ctrl+V, dropped on the artwork, or chosen from a file. Search can fill the cover, lyrics, and timing from MusicBrainz, Cover Art Archive, iTunes, and LRCLIB. A searched image is kept only after you apply it to a track or a playlist, and the same picture is stored once.
+- Build playlists, pin a favorite to the top of the sidebar, and set playback to stop, repeat the track, or repeat the playlist.
+- Extract several library tracks as one zip, or extract a playlist as `01.Track name.mp3` into a folder you choose. The folder is remembered. Extraction starts when you press Extract.
+- Import a playlist from an `.orfeus` package.
+- Save a YouTube link as a 320 kbps MP3. You choose whether to keep the video, which resolution to keep, and where the files go.
+- Open a stage with the cover, a spectrum, and timed lyrics. The corner shows the playlist or the library the song came from.
+- Keep listening history by day, month, and year, with the time written on each bar.
+- Burn a simple audio CD or data disc when `xorriso` and `ffmpeg` are available.
+- Move a library track to Trash, then restore it or delete the file after confirmation.
+
+## Stack
+
+| Layer | Pieces |
+| --- | --- |
+| Desktop shell | Tauri 2. Windows uses WebView2. Linux uses WebKitGTK. |
+| Interface | React 19, TypeScript, Vite 7, Tailwind CSS 4, Zustand |
+| Audio | Rust, cpal, Symphonia (MP3, FLAC, Ogg Vorbis, WAV, AAC, ALAC), rustfft |
+| Library | SQLite through rusqlite, tags through lofty |
+| Other | reqwest for cover and lyric lookup, zip for packages and multi-track export, souvlaki for system media controls |
 
 ## Run from source
 
-From the project folder:
+Each block has a copy button in the preview and on GitHub.
 
 ```bash
 npm install
+```
+
+```bash
 npm run tauri dev
 ```
 
-That opens the desktop window with the Rust audio engine. The Vite page on its own is only a preview and cannot play your files.
+`npm run tauri dev` opens the desktop window and the Rust audio engine. The Vite page alone is only a preview and cannot play your files.
 
-## Install on Linux
+## Linux
 
-From the project folder, on most desktop distros:
+Orfeus installs for the current user. The launcher is `~/.local/bin/orfeus`.
 
-```bash
-./scripts/install-linux.sh
-```
-
-The script builds an AppImage and installs it for the current user. The launcher is `~/.local/bin/orfeus`. It sets `APPIMAGE_EXTRACT_AND_RUN`, so the app starts without FUSE and without installing system packages for each distro. Orfeus then appears in the app menu.
-
-Building still needs Node.js, Rust, and the WebKit libraries used by Tauri. On CachyOS or Arch:
+On CachyOS or Arch, install the libraries used to build and the tools used by YouTube import:
 
 ```bash
 sudo pacman -S --needed webkit2gtk-4.1 gtk3 pkg-config file openssl python ffmpeg
 ```
 
-`scripts/cachyos.sh` is the same build, but it installs the native release binary instead of the AppImage. Use that on CachyOS when you already have those libraries.
+Build the AppImage and install it:
 
-Burning a CD or DVD from the app needs `xorriso` and, for an audio CD, `ffmpeg`. Listing the drive needs `lsblk`.
+```bash
+./scripts/install-linux.sh
+```
 
-## Uninstall on Linux
+The launcher sets `APPIMAGE_EXTRACT_AND_RUN`, so the app starts without FUSE. Orfeus then appears in the app menu.
 
-Close Orfeus, then from the project folder:
+On CachyOS, this installs the native release binary instead of the AppImage:
+
+```bash
+./scripts/cachyos.sh
+```
+
+Burning a CD or DVD needs `xorriso`. An audio CD also needs `ffmpeg`. Listing the drive needs `lsblk`.
+
+### Uninstall on Linux
+
+Close Orfeus first.
 
 ```bash
 ./scripts/uninstall-linux.sh
 ```
 
-That removes the launcher installed by `scripts/install-linux.sh` or `scripts/cachyos.sh`:
+That removes the launcher, the AppImage under `~/.local/lib/orfeus`, the desktop entry, and the icons. Your music files stay where they are. Playlists, covers, lyrics, and the database stay in `~/.local/share/app.orfeus.desktop`.
 
-- `~/.local/bin/orfeus`
-- `~/.local/lib/orfeus` (the AppImage)
-- `~/.local/share/applications/orfeus.desktop`
-- the `orfeus` icons under `~/.local/share/icons/hicolor`
-
-It does not delete your music files. Playlists, covers, lyrics, and the library database stay in `~/.local/share/app.orfeus.desktop`. To remove the program and that library data together:
+Remove the program and that library data together:
 
 ```bash
 ./scripts/uninstall-linux.sh --data
 ```
 
-The same files can be removed by hand:
+The same launcher files can be removed by hand:
 
 ```bash
 rm -f ~/.local/bin/orfeus
@@ -69,63 +98,58 @@ update-desktop-database ~/.local/share/applications
 gtk-update-icon-cache -f ~/.local/share/icons/hicolor
 ```
 
-The AppImage and the release binary inside the project folder are build output. Delete `src-tauri/target` from the project if you want those gone too.
+## Windows
 
-## Install on Windows
+Orfeus runs on Windows 10 and Windows 11, 64-bit (x86_64). It does not run on 32-bit Windows or on Windows ARM. The installed app uses WebView2. The setup wizard downloads WebView2 when it is missing.
 
-Orfeus runs on **Windows 10 and Windows 11, 64-bit (x86_64)**. It does not run on 32-bit Windows or on Windows ARM. The installed app uses the system WebView2 runtime. The setup wizard downloads WebView2 when it is missing.
+To build the installer, use a 64-bit Windows 10 or Windows 11 machine with:
 
-Build the installer on a Windows 10 or Windows 11 64-bit machine.
+1. [Node.js](https://nodejs.org/) LTS, which includes npm.
+2. [Rust](https://rustup.rs/). Open a new terminal after installing so `cargo` is on the PATH.
+3. Visual Studio Build Tools with the Desktop development with C++ workload.
 
-Install these once:
-
-1. [Node.js](https://nodejs.org/) (the LTS build includes `npm`).
-2. [Rust](https://rustup.rs/). After it installs, open a new terminal so `cargo` is on the PATH.
-3. Visual Studio Build Tools with the **Desktop development with C++** workload. The Rust installer can prompt for this.
-4. WebView2 is already on current Windows 11. The setup wizard downloads it if a machine does not have it.
-
-Then, in PowerShell, from the project folder:
+From the project folder in PowerShell:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
+```
+
+```powershell
 .\scripts\install-windows.ps1
 ```
 
-The script installs the npm packages and runs `npm run tauri build -- --bundles nsis`. That produces a setup wizard:
+The script installs the npm packages and builds the setup wizard:
 
 ```text
-src-tauri\target\release\bundle\nsis\Orfeus_1.5.2_x64-setup.exe
+src-tauri\target\release\bundle\nsis\Orfeus_1.6.1_x64-setup.exe
 ```
 
-The version in the file name follows `version` in `src-tauri/tauri.conf.json`. Double-click the `.exe`. The wizard asks whether to install for the current user or for everyone, then offers to open the bundled Python installer (`python-manager-26.4.msix`). That step is optional and is for YouTube import. The wizard then copies Orfeus and adds it to the Start menu. You can copy that setup file to another PC and run it there without the source tree. The setup itself is a 64-bit installer for Windows 10 and Windows 11.
+The file name follows `version` in `src-tauri/tauri.conf.json`. The wizard asks whether to install for you or for everyone, then offers to open the bundled Python installer (`python-manager-26.4.msix`). That step is for YouTube import and can be skipped. The setup is unsigned: if SmartScreen appears, choose More info, then Run anyway.
 
-YouTube import on Windows needs Python (`py`, `python`, or `python3`) and `ffmpeg` on the PATH. Burning a disc needs `xorriso` and, for an audio CD, `ffmpeg`.
+YouTube import needs Python (`py`, `python`, or `python3`) and `ffmpeg` on the PATH. Burning a disc needs `xorriso` and, for an audio CD, `ffmpeg`.
 
-## Uninstall on Windows
+### Uninstall on Windows
 
-Close Orfeus. Either open **Settings → Apps → Installed apps**, find **Orfeus**, and choose **Uninstall**, or from the project folder in PowerShell:
+Close Orfeus. In Settings, open Apps, find Orfeus, and choose Uninstall. From the project folder, the same uninstall can be started with:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
+```
+
+```powershell
 .\scripts\uninstall-windows.ps1
 ```
 
-The script runs the uninstaller that the setup wizard registered. It removes the program, the Start menu shortcut, and the Installed apps entry. It does not delete your music files. Playlists, covers, lyrics, and the library database stay in:
+That removes the program, the Start menu shortcut, and the Installed apps entry. Music files are left alone. The library data stays in `%APPDATA%\app.orfeus.desktop`, usually `C:\Users\<you>\AppData\Roaming\app.orfeus.desktop`.
 
-```text
-%APPDATA%\app.orfeus.desktop
-```
-
-That is usually `C:\Users\<you>\AppData\Roaming\app.orfeus.desktop`. To remove the program and that library data together:
+Remove the program and that data together:
 
 ```powershell
 .\scripts\uninstall-windows.ps1 -Data
 ```
 
-The setup `.exe` inside `src-tauri\target` is build output. Delete `src-tauri\target` from the project if you want that file gone too.
-
 ## Background
 
-The default background is the mythological painting *Orpheus and Eurydice* by Peter Paul Rubens (1577–1640), painted in 1636–1638.
+The default background is the painting *Orpheus and Eurydice* by Peter Paul Rubens (1577–1640), painted in 1636–1638.
 
 Orfeus is released under the MIT license. See `LICENSE`.
