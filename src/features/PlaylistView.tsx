@@ -166,7 +166,7 @@ export function PlaylistView({ id }: { id: string }) {
           </Button>
           <Button variant="outline" disabled={!ordered.length} onClick={() => setBurnOpen(true)}>
             <Disc className="size-5" />
-            Burn
+            Burn CD or DVD
           </Button>
           <Button variant="ghost" onClick={() => void deletePlaylist(playlist.id).catch(showError)} aria-label="Delete playlist">
             <Trash2 className="size-5" />

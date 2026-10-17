@@ -309,7 +309,7 @@ export function listDrives() {
   return call<OpticalDrive[]>("list_drives")
 }
 
-export function burnDisc(kind: "audio" | "data", device: string, trackIds: string[]) {
+export function burnDisc(kind: "audio" | "cd" | "dvd", device: string, trackIds: string[]) {
   return call<void>("burn_disc", { kind, device, trackIds })
 }
 

@@ -9,6 +9,9 @@ use crate::AppState;
 use crate::models::OpticalDrive;
 
 const AUDIO_LIMIT_MS: i64 = 80 * 60 * 1000;
+const AUDIO_TRACKS: usize = 99;
+const CD_BYTES: u64 = 680 * 1_000_000;
+const DVD_BYTES: u64 = 4_500 * 1_000_000;
 
 #[cfg(target_os = "linux")]
 #[derive(Deserialize)]
@@ -66,15 +69,12 @@ pub fn burn_disc(app: AppHandle, state: tauri::State<'_, AppState>, kind: String
     if track_ids.is_empty() {
         return Err("Choose at least one track.".into());
     }
-    if kind != "audio" && kind != "data" {
-        return Err("Choose an audio CD or a data disc.".into());
+    if kind != "audio" && kind != "cd" && kind != "dvd" {
+        return Err("Choose an audio CD, a data CD, or a data DVD.".into());
     }
     let jobs = tracks(&state, &track_ids)?;
-    if kind == "audio" {
-        let total: i64 = jobs.iter().map(|job| job.duration_ms.max(0)).sum();
-        if total > AUDIO_LIMIT_MS {
-            return Err("An audio CD holds about 80 minutes. Choose fewer tracks.".into());
-        }
+    if let Some(reason) = capacity_error(&kind, &jobs) {
+        return Err(reason);
     }
     let dir = std::env::temp_dir().join(format!("orfeus-burn-{}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
@@ -87,6 +87,7 @@ struct Job {
     title: String,
     path: String,
     duration_ms: i64,
+    size: u64,
 }
 
 fn tracks(state: &tauri::State<'_, AppState>, ids: &[String]) -> Result<Vec<Job>, String> {
@@ -95,13 +96,14 @@ fn tracks(state: &tauri::State<'_, AppState>, ids: &[String]) -> Result<Vec<Job>
     for id in ids {
         let row = conn
             .query_row("SELECT title, path, duration_ms FROM tracks WHERE id = ?1", [id], |row| {
-                Ok(Job { title: row.get(0)?, path: row.get(1)?, duration_ms: row.get(2)? })
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
             })
-            .map_err(|_| format!("A selected track is no longer in the library."))?;
-        if !Path::new(&row.path).is_file() {
-            return Err(format!("{} is missing from disk.", row.title));
+            .map_err(|_| "A selected track is no longer in the library.".to_string())?;
+        if !Path::new(&row.1).is_file() {
+            return Err(format!("{} is missing from disk.", row.0));
         }
-        jobs.push(row);
+        let size = std::fs::metadata(&row.1).map(|meta| meta.len()).unwrap_or(0);
+        jobs.push(Job { title: row.0, path: row.1, duration_ms: row.2, size });
     }
     Ok(jobs)
 }
@@ -110,7 +112,12 @@ fn burn(app: &AppHandle, dir: &Path, kind: &str, device: &str, jobs: &[Job]) -> 
     let _ = app.emit("disc://progress", "Preparing the tracks");
     let mut maps = Vec::new();
     for (index, job) in jobs.iter().enumerate() {
-        let name = disc_name(&job.title, index + 1);
+        let ext = Path::new(&job.path).extension().and_then(|ext| ext.to_str()).unwrap_or("audio");
+        let name = if kind == "audio" {
+            disc_name(&job.title, index + 1)
+        } else {
+            format!("{}.{}", disc_name(&job.title, index + 1), ext)
+        };
         let source = if kind == "audio" {
             let wav = dir.join(format!("{index:02}.wav"));
             let status = Command::new("ffmpeg")
@@ -128,7 +135,7 @@ fn burn(app: &AppHandle, dir: &Path, kind: &str, device: &str, jobs: &[Job]) -> 
         maps.push((source, name));
     }
     let _ = app.emit("disc://progress", "Writing the disc");
-    let mut args = vec!["-outdev".into(), device.into(), "-blank".into(), "as_needed".into(), "-close".into(), "on".into()];
+    let mut args = vec!["-outdev".into(), burn_target(device), "-blank".into(), "as_needed".into(), "-close".into(), "on".into()];
     for (source, name) in &maps {
         if kind == "audio" {
             args.push("-audio".into());
@@ -166,25 +173,74 @@ fn device_ok(device: &str) -> bool {
     if let Some(rest) = device.strip_prefix("/dev/sr") {
         return !rest.is_empty() && rest.chars().all(|char| char.is_ascii_digit());
     }
-    let bytes = device.as_bytes();
-    bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+    drive_letter(device).is_some()
 }
 
-#[cfg(target_os = "windows")]
-#[tauri::command]
-pub fn list_drives() -> Result<Vec<OpticalDrive>, String> {
-    let output = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "Get-CimInstance Win32_CDROMDrive | Select-Object DeviceID,Name | ConvertTo-Json -Compress",
-        ])
-        .output()
-        .map_err(|_| "Could not list optical drives.".to_string())?;
-    if !output.status.success() {
-        return Err("Could not list optical drives.".into());
+fn drive_letter(device: &str) -> Option<char> {
+    let bytes = device.as_bytes();
+    if bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        return Some((bytes[0] as char).to_ascii_uppercase());
     }
-    let text = String::from_utf8_lossy(&output.stdout);
+    None
+}
+
+fn windows_burn_target(device: &str) -> Option<String> {
+    drive_letter(device).map(|letter| format!(r"\\.\{letter}:"))
+}
+
+fn burn_target(device: &str) -> String {
+    if cfg!(windows) {
+        if let Some(target) = windows_burn_target(device) {
+            return target;
+        }
+    }
+    device.to_string()
+}
+
+fn capacity_error(kind: &str, jobs: &[Job]) -> Option<String> {
+    if kind == "audio" {
+        if jobs.len() > AUDIO_TRACKS {
+            return Some("An audio CD holds 99 tracks.".into());
+        }
+        let total: i64 = jobs.iter().map(|job| job.duration_ms.max(0)).sum();
+        if total > AUDIO_LIMIT_MS {
+            return Some("An audio CD holds about 80 minutes. Choose fewer tracks.".into());
+        }
+        return None;
+    }
+    let total: u64 = jobs.iter().map(|job| job.size).sum();
+    let (limit, label) = if kind == "dvd" { (DVD_BYTES, "DVD") } else { (CD_BYTES, "CD") };
+    if total > limit {
+        return Some(format!("These files are larger than a data {label} can hold."));
+    }
+    None
+}
+
+fn console_text(bytes: &[u8]) -> String {
+    let units = if bytes.starts_with(&[0xFF, 0xFE]) {
+        Some(&bytes[2..])
+    } else if bytes.len() >= 4 && bytes.len() % 2 == 0 && bytes.iter().skip(1).step_by(2).all(|byte| *byte == 0) {
+        Some(bytes)
+    } else {
+        None
+    };
+    if let Some(encoded) = units {
+        let wide: Vec<u16> = encoded.chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
+        return String::from_utf16_lossy(&wide);
+    }
+    String::from_utf8_lossy(bytes).trim_start_matches('\u{feff}').to_string()
+}
+
+fn json_str<'a>(row: &'a serde_json::Value, name: &str) -> Option<&'a str> {
+    row.as_object()?.iter().find(|(key, _)| key.eq_ignore_ascii_case(name)).and_then(|(_, value)| value.as_str())
+}
+
+fn normalize_drive(raw: &str) -> Option<String> {
+    let text = raw.trim().trim_start_matches(r"\\.\").trim_end_matches(['\\', '/']);
+    drive_letter(text).map(|letter| format!("{letter}:"))
+}
+
+fn drives_from_windows_json(text: &str) -> Result<Vec<OpticalDrive>, String> {
     let text = text.trim();
     if text.is_empty() || text == "null" {
         return Ok(Vec::new());
@@ -196,23 +252,90 @@ pub fn list_drives() -> Result<Vec<OpticalDrive>, String> {
     };
     let mut drives = Vec::new();
     for row in rows {
-        let Some(device) = row.get("DeviceID").and_then(|value| value.as_str()) else {
+        let raw = json_str(&row, "Drive").or_else(|| json_str(&row, "DeviceID")).unwrap_or("");
+        let Some(device) = normalize_drive(raw) else {
             continue;
         };
-        let device = device.trim().to_string();
-        if !device_ok(&device) {
-            continue;
-        }
-        let label = row.get("Name").and_then(|value| value.as_str()).unwrap_or("Optical drive");
-        drives.push(OpticalDrive { device, label: label.to_string(), size: String::new() });
+        let name = json_str(&row, "Name").unwrap_or("Optical drive");
+        let media = json_str(&row, "MediaType").unwrap_or("").trim();
+        let label = if media.is_empty() { name.to_string() } else { format!("{name} · {media}") };
+        drives.push(OpticalDrive { device, label, size: String::new() });
     }
     Ok(drives)
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn list_drives() -> Result<Vec<OpticalDrive>, String> {
+    let output = Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "$OutputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; Get-CimInstance Win32_CDROMDrive | Select-Object Drive,DeviceID,Name,MediaType | ConvertTo-Json -Compress",
+        ])
+        .output()
+        .map_err(|_| "Could not list optical drives.".to_string())?;
+    if !output.status.success() {
+        return Err("Could not list optical drives.".into());
+    }
+    drives_from_windows_json(&console_text(&output.stdout))
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 #[tauri::command]
 pub fn list_drives() -> Result<Vec<OpticalDrive>, String> {
     Ok(Vec::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn job(minutes: i64, size: u64) -> Job {
+        Job { title: "Track".into(), path: "a.mp3".into(), duration_ms: minutes * 60 * 1000, size }
+    }
+
+    #[test]
+    fn windows_drive_json_accepts_one_drive_or_a_list() {
+        let one = drives_from_windows_json(r#"{"Drive":"e:","DeviceID":"\\\\.\\CDROM0","Name":"HL-DT-ST","MediaType":"DVD Writer"}"#).unwrap();
+        assert_eq!(one.len(), 1);
+        assert_eq!(one[0].device, "E:");
+        assert_eq!(one[0].label, "HL-DT-ST · DVD Writer");
+        let many = drives_from_windows_json(r#"[{"Drive":"D:"},{"DeviceID":"F:"}]"#).unwrap();
+        assert_eq!(many.iter().map(|drive| drive.device.as_str()).collect::<Vec<_>>(), ["D:", "F:"]);
+        assert!(drives_from_windows_json("null").unwrap().is_empty());
+        assert!(drives_from_windows_json(r#"{"DeviceID":"\\\\.\\CDROM0"}"#).unwrap().is_empty());
+    }
+
+    #[test]
+    fn windows_console_text_reads_utf16() {
+        let wide: Vec<u8> = "{}"
+            .encode_utf16()
+            .flat_map(|unit| unit.to_le_bytes())
+            .collect();
+        assert_eq!(console_text(&wide), "{}");
+        let mut bom = vec![0xFF, 0xFE];
+        bom.extend(wide);
+        assert_eq!(console_text(&bom), "{}");
+        assert_eq!(console_text("{\"Drive\":\"G:\"}".as_bytes()).contains("G:"), true);
+    }
+
+    #[test]
+    fn windows_burn_target_uses_the_drive_path() {
+        assert_eq!(windows_burn_target("E:").as_deref(), Some(r"\\.\E:"));
+        assert_eq!(burn_target("/dev/sr0"), "/dev/sr0");
+    }
+
+    #[test]
+    fn audio_cd_and_data_discs_have_different_limits() {
+        assert!(capacity_error("audio", &[job(70, 9_000_000_000)]).is_none());
+        assert!(capacity_error("audio", &[job(90, 1)]).unwrap().contains("80 minutes"));
+        assert!(capacity_error("cd", &[job(1, 500_000_000)]).is_none());
+        assert!(capacity_error("cd", &[job(1, 800_000_000)]).unwrap().contains("data CD"));
+        assert!(capacity_error("dvd", &[job(1, 4_000_000_000)]).is_none());
+        assert!(capacity_error("dvd", &[job(1, 5_000_000_000)]).unwrap().contains("data DVD"));
+    }
 }
 
 fn disc_name(title: &str, index: usize) -> String {

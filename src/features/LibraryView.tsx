@@ -209,7 +209,7 @@ export function LibraryView() {
             </DropdownMenuItem>
             <DropdownMenuItem disabled={!selected.length} onSelect={() => setBurnOpen(true)}>
               <Disc className="size-4" />
-              Burn disc
+              Burn CD or DVD
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

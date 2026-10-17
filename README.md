@@ -16,7 +16,7 @@ Version 1.6.1. The interface is in English.
 - Save a YouTube link as a 320 kbps MP3. You choose whether to keep the video, which resolution to keep, and where the files go.
 - Open a stage with the cover, a spectrum, and timed lyrics. The corner shows the playlist or the library the song came from.
 - Keep listening history by day, month, and year, with the time written on each bar.
-- Burn a simple audio CD or data disc when `xorriso` and `ffmpeg` are available.
+- Burn an audio CD for a CD player, a data CD, or a data DVD. An audio CD needs `ffmpeg`. Every disc needs `xorriso`.
 - Move a library track to Trash, then restore it or delete the file after confirmation.
 
 ## Stack
@@ -67,7 +67,7 @@ On CachyOS, this installs the native release binary instead of the AppImage:
 ./scripts/cachyos.sh
 ```
 
-Burning a CD or DVD needs `xorriso`. An audio CD also needs `ffmpeg`. Listing the drive needs `lsblk`.
+Burning needs `xorriso`. An audio CD also needs `ffmpeg`. Listing the drive needs `lsblk`. Audio CD is only for a blank CD. Data CD and data DVD keep the original files.
 
 ### Uninstall on Linux
 
@@ -126,7 +126,7 @@ src-tauri\target\release\bundle\nsis\Orfeus_1.6.1_x64-setup.exe
 
 The file name follows `version` in `src-tauri/tauri.conf.json`. The wizard asks whether to install for you or for everyone, then offers to open the bundled Python installer (`python-manager-26.4.msix`). That step is for YouTube import and can be skipped. The setup is unsigned: if SmartScreen appears, choose More info, then Run anyway.
 
-YouTube import needs Python (`py`, `python`, or `python3`) and `ffmpeg` on the PATH. Burning a disc needs `xorriso` and, for an audio CD, `ffmpeg`.
+YouTube import needs Python (`py`, `python`, or `python3`) and `ffmpeg` on the PATH. Burning needs `xorriso` and, for an audio CD, `ffmpeg`. The drive list uses Windows PowerShell. Audio CD is a blank CD for a CD player. Data CD and data DVD keep the original files.
 
 ### Uninstall on Windows
 
