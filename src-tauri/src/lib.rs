@@ -125,6 +125,7 @@ pub fn run() {
             youtube::youtube_reveal,
             disc::list_drives,
             disc::burn_disc,
+            disc::read_disc,
             audio::play,
             audio::retarget,
             audio::pause,

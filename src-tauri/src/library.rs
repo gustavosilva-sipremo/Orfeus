@@ -1056,6 +1056,28 @@ fn remember_watched(
     Ok(())
 }
 
+pub(crate) fn adopt_files(state: &crate::AppState, paths: &[PathBuf]) -> Result<Vec<String>, String> {
+    let conn = state
+        .db
+        .lock()
+        .map_err(|_| "The library is busy.".to_string())?;
+    let shelf = resolve_shelf(&conn, None)?;
+    let mut ids = Vec::new();
+    for path in paths {
+        import_one(&conn, &state.data_dir, path, false, &shelf)?;
+        let path_str = path.to_string_lossy().to_string();
+        let id: String = conn
+            .query_row(
+                "SELECT id FROM tracks WHERE path = ?1",
+                [&path_str],
+                |row| row.get(0),
+            )
+            .map_err(|_| format!("Could not add {path_str} to the library."))?;
+        ids.push(id);
+    }
+    Ok(ids)
+}
+
 fn import_one(
     conn: &Connection,
     data_dir: &Path,

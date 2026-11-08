@@ -313,6 +313,10 @@ export function burnDisc(kind: "audio" | "cd" | "dvd", device: string, trackIds:
   return call<void>("burn_disc", { kind, device, trackIds })
 }
 
+export function readDisc(device: string) {
+  return call<string>("read_disc", { device })
+}
+
 export function playbackState() {
   return call<PlaybackState>("playback_state")
 }

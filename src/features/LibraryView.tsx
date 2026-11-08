@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Slider } from "@/components/ui/slider"
 import { BurnDialog } from "@/features/BurnDialog"
+import { ReadDiscDialog } from "@/features/ReadDiscDialog"
 import { ExtractDialog } from "@/features/ExtractDialog"
 import { TrackBrowse } from "@/features/TrackBrowse"
 import * as api from "@/lib/api"
@@ -50,6 +51,7 @@ export function LibraryView() {
   const [exportDir, setExportDir] = useState(() => localStorage.getItem(exportKey) ?? "")
   const [youtubeOpen, setYoutubeOpen] = useState(false)
   const [burnOpen, setBurnOpen] = useState(false)
+  const [readOpen, setReadOpen] = useState(false)
   const [extractIds, setExtractIds] = useState<string[]>([])
   const sequenceRef = useRef<Track[]>([])
   const [playMode, setPlayMode] = useState<"one" | "sequence">(() => (localStorage.getItem(playKey) === "one" ? "one" : "sequence"))
@@ -190,6 +192,10 @@ export function LibraryView() {
               <Download className="size-4" />
               Export
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setReadOpen(true)}>
+              <Disc className="size-4" />
+              Read CD or DVD
+            </DropdownMenuItem>
             <DropdownMenuItem disabled={!selected.length} onSelect={() => setBurnOpen(true)}>
               <Disc className="size-4" />
               Burn CD or DVD
@@ -197,6 +203,7 @@ export function LibraryView() {
           </DropdownMenuContent>
         </DropdownMenu>
         <BurnDialog open={burnOpen} trackIds={selected} onOpenChange={setBurnOpen} />
+        <ReadDiscDialog open={readOpen} onOpenChange={setReadOpen} />
         <ExtractDialog
           open={extractIds.length > 0}
           title="Export tracks"
