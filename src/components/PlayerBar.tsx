@@ -1,12 +1,12 @@
-import { Pause, Play, Repeat, Repeat1, RotateCcw, RotateCw, SkipBack, SkipForward, Volume1, Volume2, VolumeX } from "lucide-react"
-import { useState } from "react"
+import { ListMusic, ListStart, Pause, Play, Repeat, Repeat1, RotateCcw, RotateCw, SkipBack, SkipForward, Volume1, Volume2, VolumeX } from "lucide-react"
+import { useState, type ReactNode } from "react"
 import { Cover } from "@/components/Cover"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { artistLabel, crossfadeLabel, formatClock, loopLabel, rateLabel } from "@/lib/format"
+import { artistLabel, crossfadeLabel, formatClock, loopHint, loopLabel, rateLabel } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { usePlayer } from "@/stores/player"
+import { usePlayer, type PlayScope } from "@/stores/player"
 
 export function PlayerBar() {
   const title = usePlayer((state) => state.title)
@@ -26,6 +26,8 @@ export function PlayerBar() {
   const cycleRate = usePlayer((state) => state.cycleRate)
   const crossfade = usePlayer((state) => state.crossfade)
   const cycleCrossfade = usePlayer((state) => state.cycleCrossfade)
+  const playScope = usePlayer((state) => state.playScope)
+  const setPlayScope = usePlayer((state) => state.setPlayScope)
   const setStageOpen = usePlayer((state) => state.setStageOpen)
   const stageOpen = usePlayer((state) => state.stageOpen)
   const [scrub, setScrub] = useState<number | null>(null)
@@ -34,31 +36,52 @@ export function PlayerBar() {
 
   return (
     <footer className={cn("glass relative z-30 border-t px-3 py-2 sm:px-4 sm:py-3", stageOpen && "invisible")} aria-hidden={stageOpen}>
-      <div className="flex flex-col gap-2 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(16rem,1.5fr)_auto] lg:items-center lg:gap-4">
-        <button type="button" className="flex min-w-0 cursor-pointer items-center gap-3 text-left disabled:cursor-not-allowed" onClick={() => setStageOpen(true)} disabled={disabled}>
-          <Cover path={coverPath} className="size-12 shrink-0 rounded-md sm:size-14" />
-          <span className="min-w-0">
-            <span className="serif block truncate text-base sm:text-lg">{title || "Nothing playing"}</span>
-            <span className="block truncate text-sm text-muted-foreground">{trackId ? artistLabel(artist) : "Pick a track"}</span>
-          </span>
-        </button>
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => void previous()} disabled={disabled} aria-label="Previous">
-              <SkipBack className="size-5" />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => void seek(Math.max(0, position - 5))} disabled={disabled} aria-label="Back 5 seconds">
-              <RotateCcw className="size-5" />
-            </Button>
-            <Button size="icon" className="size-12" onClick={() => void toggle()} disabled={disabled} aria-label={playing ? "Pause" : "Play"}>
-              {playing ? <Pause className="size-6" /> : <Play className="size-6" />}
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => void seek(position + 5)} disabled={disabled} aria-label="Forward 5 seconds">
-              <RotateCw className="size-5" />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => void next()} disabled={disabled} aria-label="Next">
-              <SkipForward className="size-5" />
-            </Button>
+      <div className="flex flex-col gap-2 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-center lg:gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <button type="button" className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left disabled:cursor-not-allowed" onClick={() => setStageOpen(true)} disabled={disabled}>
+            <Cover path={coverPath} className="size-12 shrink-0 rounded-md sm:size-14" />
+            <span className="min-w-0">
+              <span className="serif block truncate text-base sm:text-lg">{title || "Nothing playing"}</span>
+              <span className="block truncate text-sm text-muted-foreground">{trackId ? artistLabel(artist) : "Pick a track"}</span>
+            </span>
+          </button>
+          <div className="hidden items-center gap-2 lg:flex">
+            <ScopeToggle scope={playScope} onChange={(scope) => void setPlayScope(scope)} />
+            <Hint label={loopLabel(loopMode)} detail={loopHint(loopMode)}>
+              <Button variant="outline" size="sm" onClick={() => void cycleLoop()} disabled={disabled} aria-label={loopLabel(loopMode)}>
+                {loopMode === "track" ? <Repeat1 className="size-4" /> : <Repeat className="size-4" />}
+                {loopLabel(loopMode)}
+              </Button>
+            </Hint>
+          </div>
+        </div>
+        <div className="flex w-full flex-col gap-2 lg:w-[min(28rem,36vw)]">
+          <div className="flex items-center justify-center gap-1">
+            <Hint label="Previous track" detail="Goes back to the start, then to the track before this one.">
+              <Button variant="ghost" size="icon" onClick={() => void previous()} disabled={disabled} aria-label="Previous track">
+                <SkipBack className="size-5" />
+              </Button>
+            </Hint>
+            <Hint label="Back 5 seconds">
+              <Button variant="ghost" size="icon" onClick={() => void seek(Math.max(0, position - 5))} disabled={disabled} aria-label="Back 5 seconds">
+                <RotateCcw className="size-5" />
+              </Button>
+            </Hint>
+            <Hint label={playing ? "Pause" : "Play"}>
+              <Button size="icon" className="size-12" onClick={() => void toggle()} disabled={disabled} aria-label={playing ? "Pause" : "Play"}>
+                {playing ? <Pause className="size-6" /> : <Play className="size-6" />}
+              </Button>
+            </Hint>
+            <Hint label="Forward 5 seconds">
+              <Button variant="ghost" size="icon" onClick={() => void seek(position + 5)} disabled={disabled} aria-label="Forward 5 seconds">
+                <RotateCw className="size-5" />
+              </Button>
+            </Hint>
+            <Hint label="Next track" detail="Skips to the next track in the queue.">
+              <Button variant="ghost" size="icon" onClick={() => void next()} disabled={disabled} aria-label="Next track">
+                <SkipForward className="size-5" />
+              </Button>
+            </Hint>
           </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span className="w-12 tabular-nums">{formatClock(scrub == null ? position : scrub * duration)}</span>
@@ -76,39 +99,67 @@ export function PlayerBar() {
             <span className="w-12 text-right tabular-nums">{formatClock(duration)}</span>
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <VolumeControl />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="sm" onClick={() => void cycleLoop()} disabled={disabled}>
-                {loopMode === "track" ? <Repeat1 className="size-5" /> : <Repeat className="size-5" />}
+        <div className="flex flex-wrap items-center gap-2 lg:justify-start">
+          <div className="flex items-center gap-2 lg:hidden">
+            <ScopeToggle scope={playScope} onChange={(scope) => void setPlayScope(scope)} />
+            <Hint label={loopLabel(loopMode)} detail={loopHint(loopMode)}>
+              <Button variant="outline" size="sm" onClick={() => void cycleLoop()} disabled={disabled} aria-label={loopLabel(loopMode)}>
+                {loopMode === "track" ? <Repeat1 className="size-4" /> : <Repeat className="size-4" />}
                 {loopLabel(loopMode)}
               </Button>
-            </TooltipTrigger>
-            <TooltipContent>Loop the track or the playlist</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="sm" onClick={() => void cycleRate()} disabled={disabled} className="w-20">
-                {rateLabel(rate)}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Speed: 1×, 2×, and ½×</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="sm" onClick={() => void cycleCrossfade()} className="w-16">
-                {crossfadeLabel(crossfade)}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Ease in and out between tracks: off, 1.5s, 3s, or 5s</TooltipContent>
-          </Tooltip>
-          <Button variant="secondary" size="sm" onClick={() => setStageOpen(true)}>
-            Stage
-          </Button>
+            </Hint>
+          </div>
+          <Hint label={`Speed ${rateLabel(rate)}`} detail="Each click moves through 1×, faster, reverse, and half speed.">
+            <Button variant="outline" size="sm" onClick={() => void cycleRate()} disabled={disabled} aria-label={`Speed ${rateLabel(rate)}`}>
+              Speed {rateLabel(rate)}
+            </Button>
+          </Hint>
+          <Hint label={crossfade < 1 ? "Crossfade off" : `Crossfade ${crossfadeLabel(crossfade)}`} detail="The end of a track blends into the next. Click for off, 1.5s, 3s, or 5s.">
+            <Button variant="outline" size="sm" onClick={() => void cycleCrossfade()} aria-label={crossfade < 1 ? "Crossfade off" : `Crossfade ${crossfadeLabel(crossfade)}`}>
+              Fade {crossfadeLabel(crossfade)}
+            </Button>
+          </Hint>
+          <VolumeControl />
         </div>
       </div>
     </footer>
+  )
+}
+
+function Hint({ label, detail, children }: { label: string; detail?: string; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent className="max-w-56 text-center">
+        <span className="block">{label}</span>
+        {detail ? <span className="mt-1 block text-white/70">{detail}</span> : null}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+function ScopeToggle({ scope, onChange }: { scope: PlayScope; onChange: (scope: PlayScope) => void }) {
+  return (
+    <div className="flex rounded-md border border-white/10 bg-black p-0.5" role="group" aria-label="What plays next">
+      <ScopeButton active={scope === "one"} icon={<ListMusic className="size-4" />} label="One track" detail="A click plays only that track. Next and previous stay on it." onClick={() => onChange("one")} />
+      <ScopeButton active={scope === "queue"} icon={<ListStart className="size-4" />} label="In order" detail="A click plays that track and keeps going through the list." onClick={() => onChange("queue")} />
+    </div>
+  )
+}
+
+function ScopeButton({ active, icon, label, detail, onClick }: { active: boolean; icon: ReactNode; label: string; detail: string; onClick: () => void }) {
+  return (
+    <Hint label={label} detail={detail}>
+      <button
+        type="button"
+        aria-pressed={active}
+        className={cn("flex h-9 cursor-pointer items-center gap-1.5 rounded px-2.5 text-sm", active ? "bg-[#242424] text-white" : "text-white/45 hover:text-white/80")}
+        onClick={onClick}
+      >
+        {icon}
+        <span className="hidden xl:inline">{label}</span>
+      </button>
+    </Hint>
   )
 }
 

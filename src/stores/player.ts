@@ -25,6 +25,17 @@ const empty: PlaybackState = {
 
 const volumeKey = "orfeus-volume"
 const fadeKey = "orfeus-crossfade"
+const scopeKey = "orfeus-play-mode"
+
+export type PlayScope = "one" | "queue"
+
+function readScope(): PlayScope {
+  try {
+    return localStorage.getItem(scopeKey) === "one" ? "one" : "queue"
+  } catch {
+    return "queue"
+  }
+}
 
 function readCrossfade() {
   try {
@@ -52,6 +63,9 @@ type PlayerState = PlaybackState & {
   stageOpen: boolean
   playlistId: string | null
   queue: QueueTrack[]
+  source: Track[]
+  playScope: PlayScope
+  setPlayScope: (scope: PlayScope) => Promise<void>
   init: () => Promise<void>
   playTracks: (tracks: Track[], index: number, loopMode?: LoopMode, playlistId?: string | null) => Promise<void>
   retarget: (tracks: Track[]) => Promise<void>
@@ -98,6 +112,8 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   stageOpen: false,
   playlistId: null,
   queue: [],
+  source: [],
+  playScope: readScope(),
   ready: false,
   volume: readVolume(),
   crossfade: readCrossfade(),
@@ -195,14 +211,33 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       set({ error: "That file is no longer on disk." })
       return
     }
-    set({ playlistId, ...applyQueue(queue, playableIndex, loopMode, true) })
+    const scope = get().playScope
+    const queued = scope === "one" ? queue.filter((track) => track.id === chosen.id) : queue
+    const queuedIndex = scope === "one" ? 0 : playableIndex
+    set({ playlistId, source: tracks, ...applyQueue(queued, queuedIndex, loopMode, true) })
     if (!api.desktop()) return
     void api.setTrackGain(chosen.gain ?? 1)
     try {
-      await api.play(queue, playableIndex, loopMode)
+      await api.play(queued, queuedIndex, loopMode)
     } catch (error) {
       set({ error: message(error), playing: false })
     }
+  },
+  setPlayScope: async (scope) => {
+    try {
+      localStorage.setItem(scopeKey, scope)
+    } catch {
+      // The choice still applies for this session.
+    }
+    set({ playScope: scope })
+    const { source, trackId } = get()
+    if (!trackId || !source.length) return
+    if (scope === "one") {
+      const track = source.find((item) => item.id === trackId)
+      if (track) await get().retarget([track])
+      return
+    }
+    await get().retarget(source)
   },
   retarget: async (tracks) => {
     const state = get()

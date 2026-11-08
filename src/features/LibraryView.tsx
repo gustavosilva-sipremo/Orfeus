@@ -1,6 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog"
 import { Disc, Download, FolderOpen, FolderSync, ListPlus, MoreHorizontal, Music, Pencil, SlidersHorizontal, Trash2, Upload, Youtube } from "lucide-react"
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -20,7 +20,6 @@ import { usePlayer } from "@/stores/player"
 const YouTubeDialog = lazy(() => import("@/features/YouTubeDialog").then((mod) => ({ default: mod.YouTubeDialog })))
 
 const exportKey = "orfeus-export-dir"
-const playKey = "orfeus-play-mode"
 
 const audioFilter = [{ name: "Audio", extensions: ["mp3", "flac", "ogg", "opus", "wav", "m4a", "aac", "mp4", "alac"] }]
 
@@ -53,8 +52,6 @@ export function LibraryView() {
   const [burnOpen, setBurnOpen] = useState(false)
   const [readOpen, setReadOpen] = useState(false)
   const [extractIds, setExtractIds] = useState<string[]>([])
-  const sequenceRef = useRef<Track[]>([])
-  const [playMode, setPlayMode] = useState<"one" | "sequence">(() => (localStorage.getItem(playKey) === "one" ? "one" : "sequence"))
 
   useEffect(() => {
     if (!api.desktop()) return
@@ -133,23 +130,9 @@ export function LibraryView() {
     })
   }
 
-  function setMode(mode: "one" | "sequence") {
-    localStorage.setItem(playKey, mode)
-    setPlayMode(mode)
-    const player = usePlayer.getState()
-    if (!player.trackId || player.playlistId) return
-    const playing = tracks.find((track) => track.id === player.trackId)
-    if (!playing) return
-    const list = sequenceRef.current.some((track) => track.id === playing.id) ? sequenceRef.current : tracks
-    void player.retarget(mode === "one" ? [playing] : list)
-  }
-
   function playVisible(visible: Track[], index: number) {
-    const track = visible[index]
-    if (!track) return
-    sequenceRef.current = visible
-    if (playMode === "one") void playTracks([track], 0, "off", null)
-    else void playTracks(visible, index, "off", null)
+    if (!visible[index]) return
+    void playTracks(visible, index, "off", null)
   }
 
   function toggle(id: string) {
@@ -162,10 +145,6 @@ export function LibraryView() {
         <div className="mr-auto min-w-0">
           <h2 className="serif truncate text-2xl sm:text-3xl">{shelfName}</h2>
           <p className="text-base text-muted-foreground">{ready ? `${tracks.length} tracks · ${tally(tracks)}` : "Opening the library…"}</p>
-        </div>
-        <div className="flex rounded-md border border-white/10 bg-black p-1">
-          <button type="button" className={`h-9 cursor-pointer rounded px-3 text-base ${playMode === "one" ? "bg-[#242424] text-white" : "text-white/40"}`} onClick={() => setMode("one")}>One track</button>
-          <button type="button" className={`h-9 cursor-pointer rounded px-3 text-base ${playMode === "sequence" ? "bg-[#242424] text-white" : "text-white/40"}`} onClick={() => setMode("sequence")}>In order</button>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
