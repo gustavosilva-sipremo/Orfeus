@@ -1,6 +1,7 @@
 import { LayoutGrid, List } from "lucide-react"
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type WheelEvent } from "react"
 import { Cover } from "@/components/Cover"
+import { Pager } from "@/components/Pager"
 import { RowSpectrum } from "@/components/Visualizer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -92,10 +93,22 @@ export function TrackBrowse({
 
   const cover = Math.round(52 + size * 0.48)
   const card = Math.round(148 + size * 1.2)
-  const currentRef = useRef<HTMLElement | null>(null)
+  const pageSize = mode === "list" ? 30 : 18
+  const pages = Math.max(1, Math.ceil(visible.length / pageSize))
+  const [page, setPage] = useState(0)
+  const safePage = Math.min(page, pages - 1)
+  const pageStart = safePage * pageSize
+  const pageTracks = visible.slice(pageStart, pageStart + pageSize)
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
   useEffect(() => {
-    currentRef.current?.scrollIntoView({ block: "nearest" })
-  }, [currentId])
+    setPage(0)
+  }, [filter, listingKey, mode, query, sort])
+  useEffect(() => {
+    if (!currentId) return
+    const index = visibleRef.current.findIndex((track) => track.id === currentId)
+    if (index >= 0) setPage(Math.floor(index / pageSize))
+  }, [currentId, pageSize])
 
   useEffect(() => {
     if (!menu) return
@@ -168,10 +181,11 @@ export function TrackBrowse({
         <div className="flex flex-1 items-center justify-center px-6 text-center">{empty ?? <p className="text-base text-muted-foreground">No tracks match this filter.</p>}</div>
       ) : mode === "list" ? (
         <ul className="min-h-0 flex-1 space-y-1 overflow-auto px-4 pt-4 pb-4">
-          {visible.map((track, index) => (
+          {pageTracks.map((track, offset) => {
+            const index = pageStart + offset
+            return (
             <li key={track.id}>
               <div
-                ref={currentId === track.id ? (node) => { currentRef.current = node } : undefined}
                 className={`grid cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 text-left hover:bg-white/10 ${currentId === track.id ? "glass ring-1 ring-white/50" : ""} ${isRecent(track.addedAt) && currentId !== track.id ? "ring-1 ring-gold/35" : ""}`}
                 style={{ gridTemplateColumns: "auto minmax(0,1fr) auto auto auto" }}
                 onClick={() => onOpen(visible, index)}
@@ -207,11 +221,14 @@ export function TrackBrowse({
                 ) : null}
               </div>
             </li>
-          ))}
+            )
+          })}
         </ul>
       ) : (
         <ul className="min-h-0 flex-1 overflow-auto px-4 pt-4 pb-4" style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${card}px, 1fr))`, alignContent: "start" }}>
-          {visible.map((track, index) => (
+          {pageTracks.map((track, offset) => {
+            const index = pageStart + offset
+            return (
             <li key={track.id}>
               <div
                 className={`cursor-pointer rounded-2xl p-2 hover:bg-white/10 ${currentId === track.id ? "glass ring-1 ring-white/50" : ""} ${isRecent(track.addedAt) && currentId !== track.id ? "ring-1 ring-gold/35" : ""}`}
@@ -240,9 +257,11 @@ export function TrackBrowse({
                 <span className="text-sm text-muted-foreground tabular-nums">{formatDuration(track.durationMs)} · {formatBytes(track.sizeBytes)}</span>
               </div>
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
+      {visible.length > 0 ? <Pager page={safePage} pages={pages} onPage={setPage} /> : null}
       {menu && contextActions ? (
         <div className="menu-panel fixed z-50 min-w-48 rounded-md p-1" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
           {contextActions(menu.track).map((action) => (

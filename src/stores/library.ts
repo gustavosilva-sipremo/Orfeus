@@ -5,7 +5,7 @@ import type { LoopMode, Playlist, SearchReport, Shelf, Track } from "@/lib/types
 import { message } from "@/lib/utils"
 import { usePlayer } from "@/stores/player"
 
-type View = { kind: "library"; id: string } | { kind: "playlist"; id: string } | { kind: "trash" } | { kind: "covers" } | { kind: "status" }
+export type View = { kind: "library"; id: string } | { kind: "playlist"; id: string } | { kind: "trash" } | { kind: "covers" } | { kind: "status" }
 
 function libraryView(shelves: Shelf[], current?: View): View {
   if (current?.kind === "playlist" || current?.kind === "trash" || current?.kind === "covers" || current?.kind === "status") return current
@@ -19,6 +19,8 @@ type LibraryState = {
   shelves: Shelf[]
   playlists: Playlist[]
   ready: boolean
+  sectionReady: boolean
+  sectionHold: boolean
   busy: string | null
   notice: string | null
   error: string | null
@@ -67,6 +69,8 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   shelves: [],
   playlists: [],
   ready: false,
+  sectionReady: true,
+  sectionHold: false,
   busy: null,
   notice: null,
   error: null,

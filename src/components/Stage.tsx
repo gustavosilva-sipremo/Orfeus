@@ -38,9 +38,9 @@ export function Stage() {
   }
 
   return (
-    <div className={open ? "visible fixed inset-0 z-40 opacity-100" : "pointer-events-none invisible fixed inset-0 z-40 opacity-0"} aria-hidden={!open}>
+    <div className={open ? "stage-glass visible fixed inset-0 z-40 opacity-100" : "pointer-events-none invisible fixed inset-0 z-40 opacity-0"} aria-hidden={!open}>
       <div className="relative flex h-full flex-col bg-transparent">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_42%,rgba(0,0,0,0.62)_100%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.28)_0%,rgba(0,0,0,0.78)_40%,rgba(0,0,0,0.96)_100%)]" />
         <div className="relative z-10 flex shrink-0 flex-wrap items-center justify-between gap-2 p-3 sm:p-4">
           <SourceBadge />
           <div className="ml-auto flex items-center gap-2">

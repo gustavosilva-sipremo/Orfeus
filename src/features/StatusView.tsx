@@ -1,11 +1,11 @@
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { Cover } from "@/components/Cover"
-import { CubeLoader } from "@/components/kit/CubeLoader"
 import { Button } from "@/components/ui/button"
 import * as api from "@/lib/api"
 import { artistLabel, formatListened } from "@/lib/format"
 import type { Listen } from "@/lib/types"
+import { useSectionReady } from "@/lib/section"
 import { message } from "@/lib/utils"
 import { useLibrary } from "@/stores/library"
 
@@ -19,6 +19,7 @@ export function StatusView() {
   const [rows, setRows] = useState<Listen[]>([])
   const [ready, setReady] = useState(false)
   const [reload, setReload] = useState(0)
+  useSectionReady(ready)
   const range = useMemo(() => bounds(scope, anchor), [scope, anchor])
 
   useEffect(() => {
@@ -90,11 +91,7 @@ export function StatusView() {
           </Button>
         </div>
       </div>
-      {!ready ? (
-        <div className="flex flex-1 items-center justify-center">
-          <CubeLoader label="Loading status" />
-        </div>
-      ) : (
+      {!ready ? null : (
         <div className="space-y-8 px-4 pb-8 sm:px-6">
           <section>
             <h3 className="mb-3 text-xs tracking-[0.16em] text-gold uppercase">Minutes</h3>

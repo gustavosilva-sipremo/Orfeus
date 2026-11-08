@@ -14,6 +14,7 @@ export function LightMenu({
   accent = "var(--gold)",
   label = "Menu",
   className,
+  disabled = false,
 }: {
   options: LightMenuOption[]
   value: string
@@ -21,6 +22,7 @@ export function LightMenu({
   accent?: string
   label?: string
   className?: string
+  disabled?: boolean
 }) {
   const index = options.findIndex((option) => option.value === value)
 
@@ -28,7 +30,8 @@ export function LightMenu({
     <div
       role="radiogroup"
       aria-label={label}
-      className={cn("light-menu", className)}
+      aria-busy={disabled}
+      className={cn("light-menu", disabled && "cursor-wait", className)}
       style={{ "--menu-accent": accent, "--menu-index": Math.max(index, 0) } as CSSProperties}
     >
       {options.map((option) => {
@@ -43,7 +46,10 @@ export function LightMenu({
               "relative flex h-14 w-full cursor-pointer items-center overflow-hidden rounded-md px-3 text-left text-base",
               selected ? "text-(--menu-accent)" : "text-muted-foreground",
             )}
-            onClick={() => onValueChange(option.value)}
+            onClick={() => {
+              if (disabled) return
+              onValueChange(option.value)
+            }}
           >
             {option.label}
           </button>

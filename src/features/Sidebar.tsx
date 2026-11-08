@@ -1,5 +1,5 @@
 import { BarChart3, FolderArchive, Images, Keyboard, Library, Music, Plus, Podcast, Star, Trash2, X } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { Cover } from "@/components/Cover"
 import { LightMenu } from "@/components/kit/LightMenu"
@@ -10,7 +10,14 @@ import * as api from "@/lib/api"
 import { tally } from "@/lib/format"
 import { message } from "@/lib/utils"
 import { version } from "../../package.json"
-import { useLibrary } from "@/stores/library"
+import { useLibrary, type View } from "@/stores/library"
+
+function sameView(left: View, right: View) {
+  if (left.kind !== right.kind) return false
+  if (left.kind === "library" && right.kind === "library") return left.id === right.id
+  if (left.kind === "playlist" && right.kind === "playlist") return left.id === right.id
+  return true
+}
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const view = useLibrary((state) => state.view)
@@ -24,11 +31,147 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const removeShelf = useLibrary((state) => state.removeShelf)
   const importPackage = useLibrary((state) => state.importPackage)
   const savePlaylist = useLibrary((state) => state.savePlaylist)
+  const sectionReady = useLibrary((state) => state.sectionReady)
+  const [pendingView, setPendingView] = useState<View | null>(null)
+  const lockRef = useRef(false)
+  const timerRef = useRef(0)
   const [openNew, setOpenNew] = useState(false)
   const [openShelf, setOpenShelf] = useState(false)
   const [name, setName] = useState("")
   const [shelfName, setShelfName] = useState("")
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  if (pendingView && sectionReady && sameView(view, pendingView)) {
+    lockRef.current = false
+    setPendingView(null)
+  }
+  const shown = pendingView ?? view
+  const locked = lockRef.current
+
+  useEffect(() => () => window.clearTimeout(timerRef.current), [])
+
+  function openView(next: View) {
+    if (lockRef.current || sameView(shown, next)) return false
+    lockRef.current = true
+    setPendingView(next)
+    useLibrary.setState({ sectionReady: false, sectionHold: true })
+    window.clearTimeout(timerRef.current)
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    timerRef.current = window.setTimeout(() => {
+      setView(next)
+      useLibrary.setState({ sectionHold: false })
+    }, reduce ? 0 : 280)
+    return true
+  }
+
+  const libraryOptions = useMemo(() => {
+    const oldest = Math.min(...shelves.map((item) => item.createdAt))
+    return [
+      ...shelves.map((shelf) => {
+        const primary = shelf.createdAt === oldest
+        const podcast = shelf.kind === "podcast"
+        return {
+          value: shelf.id,
+          label: (
+            <span className="flex h-full w-full items-center gap-3">
+              <span
+                role="presentation"
+                className={`flex size-8 shrink-0 items-center justify-center rounded-md ${primary ? "" : "hover:bg-white/10"}`}
+                aria-label={primary ? "Main library" : podcast ? "Use the music icon" : "Use the podcast icon"}
+                onClick={(event) => {
+                  if (primary) return
+                  event.stopPropagation()
+                  void setShelfKind(shelf.id, podcast ? "music" : "podcast").catch((reason: unknown) => useLibrary.setState({ error: message(reason) }))
+                }}
+              >
+                {primary ? <Library className="size-5" /> : podcast ? <Podcast className="size-5" /> : <Music className="size-5" />}
+              </span>
+              <span className="min-w-0 flex-1 truncate">{shelf.name}</span>
+              {shelves.length > 1 ? (
+                <span
+                  role="presentation"
+                  className="flex size-8 items-center justify-center rounded-md text-white/70 hover:bg-white/10 hover:text-white"
+                  aria-label={`Remove ${shelf.name}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void removeShelf(shelf.id).catch((reason: unknown) => useLibrary.setState({ error: message(reason) }))
+                  }}
+                >
+                  <X className="size-4" />
+                </span>
+              ) : null}
+            </span>
+          ),
+        }
+      }),
+      {
+        value: "covers",
+        label: (
+          <span className="flex h-full w-full items-center gap-3">
+            <span className="flex size-8 shrink-0 items-center justify-center">
+              <Images className="size-5" />
+            </span>
+            <span>Covers</span>
+          </span>
+        ),
+      },
+      {
+        value: "status",
+        label: (
+          <span className="flex h-full w-full items-center gap-3">
+            <span className="flex size-8 shrink-0 items-center justify-center">
+              <BarChart3 className="size-5" />
+            </span>
+            <span>Status</span>
+          </span>
+        ),
+      },
+      {
+        value: "trash",
+        label: (
+          <span className="flex h-full w-full items-center gap-3">
+            <span className="flex size-8 shrink-0 items-center justify-center">
+              <Trash2 className="size-5" />
+            </span>
+            <span className="min-w-0 flex-1">Trash</span>
+          </span>
+        ),
+      },
+    ]
+  }, [removeShelf, setShelfKind, shelves])
+
+  const playlistOptions = useMemo(() => {
+    const byId = new Map(tracks.map((track) => [track.id, track]))
+    return playlists.map((playlist) => {
+      const members = playlist.trackIds.flatMap((id) => {
+        const track = byId.get(id)
+        return track ? [track] : []
+      })
+      const summary = `${members.length} tracks · ${tally(members)}`
+      return {
+        value: playlist.id,
+        label: (
+          <span className="flex h-full w-full items-center gap-3">
+            <Cover path={playlist.coverPath} className="size-8 shrink-0 rounded" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate leading-tight">{playlist.name}</span>
+              <span className="block truncate text-xs leading-tight text-muted-foreground" title={summary}>{summary}</span>
+            </span>
+            <span
+              role="presentation"
+              className="flex size-8 items-center justify-center rounded-md hover:bg-white/10"
+              aria-label={playlist.favorite ? "Remove from favorites" : "Pin as favorite"}
+              onClick={(event) => {
+                event.stopPropagation()
+                void savePlaylist({ id: playlist.id, favorite: !playlist.favorite }).catch((reason: unknown) => useLibrary.setState({ error: message(reason) }))
+              }}
+            >
+              <Star className={`size-4 ${playlist.favorite ? "fill-amber-200 text-amber-200" : "text-white/40"}`} />
+            </span>
+          </span>
+        ),
+      }
+    })
+  }, [playlists, savePlaylist, tracks])
 
   async function onImportPackage() {
     if (!api.desktop()) {
@@ -44,10 +187,10 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   }
 
   return (
-    <aside className="glass flex h-full w-72 max-w-[86vw] shrink-0 flex-col border-r md:w-80">
+    <aside className="glass flex h-full w-60 max-w-[86vw] shrink-0 flex-col border-r md:w-64">
       <div className="px-5 pt-6 pb-4">
         <div className="flex items-center gap-3">
-          <img src="/favicon.svg" alt="" className="size-12 rounded-xl" />
+          <img src="/favicon.svg" alt="" className="size-12" />
           <h1 className="serif text-4xl italic">Orfeus</h1>
         </div>
       </div>
@@ -60,84 +203,13 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </div>
         <LightMenu
           label="Libraries"
-          value={view.kind === "library" ? view.id : view.kind}
+          disabled={locked}
+          value={shown.kind === "library" ? shown.id : shown.kind}
           onValueChange={(next) => {
-            if (next === "covers" || next === "status" || next === "trash") setView({ kind: next })
-            else setView({ kind: "library", id: next })
-            onNavigate?.()
+            const opened = next === "covers" || next === "status" || next === "trash" ? openView({ kind: next }) : openView({ kind: "library", id: next })
+            if (opened) onNavigate?.()
           }}
-          options={[
-            ...shelves.map((shelf) => {
-              const primary = shelf.createdAt === Math.min(...shelves.map((item) => item.createdAt))
-              const podcast = shelf.kind === "podcast"
-              return {
-                value: shelf.id,
-                label: (
-                  <span className="flex h-full w-full items-center gap-3">
-                    <span
-                      role="presentation"
-                      className={`flex size-8 shrink-0 items-center justify-center rounded-md ${primary ? "" : "hover:bg-white/10"}`}
-                      aria-label={primary ? "Main library" : podcast ? "Use the music icon" : "Use the podcast icon"}
-                      onClick={(event) => {
-                        if (primary) return
-                        event.stopPropagation()
-                        void setShelfKind(shelf.id, podcast ? "music" : "podcast").catch((reason: unknown) => useLibrary.setState({ error: message(reason) }))
-                      }}
-                    >
-                      {primary ? <Library className="size-5" /> : podcast ? <Podcast className="size-5" /> : <Music className="size-5" />}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate">{shelf.name}</span>
-                    {shelves.length > 1 ? (
-                      <span
-                        role="presentation"
-                        className="flex size-8 items-center justify-center rounded-md text-white/70 hover:bg-white/10 hover:text-white"
-                        aria-label={`Remove ${shelf.name}`}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          void removeShelf(shelf.id).catch((reason: unknown) => useLibrary.setState({ error: message(reason) }))
-                        }}
-                      >
-                        <X className="size-4" />
-                      </span>
-                    ) : null}
-                  </span>
-                ),
-              }
-            }),
-            {
-              value: "covers",
-              label: (
-                <span className="flex h-full w-full items-center gap-3">
-                  <span className="flex size-8 shrink-0 items-center justify-center">
-                    <Images className="size-5" />
-                  </span>
-                  <span>Covers</span>
-                </span>
-              ),
-            },
-            {
-              value: "status",
-              label: (
-                <span className="flex h-full w-full items-center gap-3">
-                  <span className="flex size-8 shrink-0 items-center justify-center">
-                    <BarChart3 className="size-5" />
-                  </span>
-                  <span>Status</span>
-                </span>
-              ),
-            },
-            {
-              value: "trash",
-              label: (
-                <span className="flex h-full w-full items-center gap-3">
-                  <span className="flex size-8 shrink-0 items-center justify-center">
-                    <Trash2 className="size-5" />
-                  </span>
-                  <span className="min-w-0 flex-1">Trash</span>
-                </span>
-              ),
-            },
-          ]}
+          options={libraryOptions}
         />
         <div className="mt-4 flex items-center justify-between px-3">
           <span className="text-xs tracking-[0.22em] text-muted-foreground uppercase">Playlists</span>
@@ -149,41 +221,12 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           {playlists.length === 0 ? <p className="px-3 py-2 text-sm text-muted-foreground">No playlists yet.</p> : (
             <LightMenu
               label="Playlists"
-              value={view.kind === "playlist" ? view.id : ""}
+              disabled={locked}
+              value={shown.kind === "playlist" ? shown.id : ""}
               onValueChange={(id) => {
-                setView({ kind: "playlist", id })
-                onNavigate?.()
+                if (openView({ kind: "playlist", id })) onNavigate?.()
               }}
-              options={playlists.map((playlist) => {
-                const members = playlist.trackIds.flatMap((id) => {
-                  const track = tracks.find((item) => item.id === id)
-                  return track ? [track] : []
-                })
-                const summary = `${members.length} tracks · ${tally(members)}`
-                return {
-                  value: playlist.id,
-                  label: (
-                    <span className="flex h-full w-full items-center gap-3">
-                      <Cover path={playlist.coverPath} className="size-8 shrink-0 rounded" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate leading-tight">{playlist.name}</span>
-                        <span className="block truncate text-xs leading-tight text-muted-foreground" title={summary}>{summary}</span>
-                      </span>
-                      <span
-                        role="presentation"
-                        className="flex size-8 items-center justify-center rounded-md hover:bg-white/10"
-                        aria-label={playlist.favorite ? "Remove from favorites" : "Pin as favorite"}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          void savePlaylist({ id: playlist.id, favorite: !playlist.favorite }).catch((reason: unknown) => useLibrary.setState({ error: message(reason) }))
-                        }}
-                      >
-                        <Star className={`size-4 ${playlist.favorite ? "fill-amber-200 text-amber-200" : "text-white/40"}`} />
-                      </span>
-                    </span>
-                  ),
-                }
-              })}
+              options={playlistOptions}
             />
           )}
         </div>

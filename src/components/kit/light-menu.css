@@ -36,16 +36,6 @@
   will-change: transform;
 }
 
-.light-menu-glider::before {
-  content: "";
-  position: absolute;
-  top: 18%;
-  left: 0;
-  width: 3.25rem;
-  height: 64%;
-  background: radial-gradient(ellipse at left center, color-mix(in srgb, var(--menu-accent) 70%, transparent) 0%, transparent 72%);
-}
-
 .light-menu-glider::after {
   content: "";
   position: absolute;

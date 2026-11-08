@@ -31,6 +31,8 @@ export function App() {
   const dismiss = useLibrary((state) => state.dismiss)
   const playerError = usePlayer((state) => state.error)
   const libraryReady = useLibrary((state) => state.ready)
+  const sectionReady = useLibrary((state) => state.sectionReady)
+  const sectionHold = useLibrary((state) => state.sectionHold)
   const playerReady = usePlayer((state) => state.ready)
   const [dropping, setDropping] = useState(false)
   const [nav, setNav] = useState(false)
@@ -195,10 +197,17 @@ export function App() {
               </button>
               <span className="serif text-xl italic">Orfeus</span>
             </div>
-            <div className="min-h-0 flex-1">
-              <Suspense fallback={null}>
-                {view.kind === "library" ? <LibraryView /> : view.kind === "trash" ? <TrashView /> : view.kind === "covers" ? <CoverGallery /> : view.kind === "status" ? <StatusView /> : <PlaylistView id={view.id} />}
-              </Suspense>
+            <div className="relative min-h-0 flex-1">
+              {sectionHold ? null : (
+                <Suspense fallback={null}>
+                  {view.kind === "library" ? <LibraryView /> : view.kind === "trash" ? <TrashView /> : view.kind === "covers" ? <CoverGallery /> : view.kind === "status" ? <StatusView /> : <PlaylistView id={view.id} />}
+                </Suspense>
+              )}
+              {sectionHold || !sectionReady ? (
+                <div className="absolute inset-0 z-10 flex items-center justify-center">
+                  <CubeLoader size={72} label="Loading" />
+                </div>
+              ) : null}
             </div>
           </main>
         </div>

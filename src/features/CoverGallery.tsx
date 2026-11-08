@@ -1,11 +1,13 @@
 import { ChevronLeft, ChevronRight, Images, Trash2, X } from "lucide-react"
 import { useEffect, useMemo, useState, type CSSProperties } from "react"
-import { CubeLoader } from "@/components/kit/CubeLoader"
+import { FittedImage } from "@/components/Cover"
+import { Pager } from "@/components/Pager"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import * as api from "@/lib/api"
 import { loadCover, localCoverUrl } from "@/lib/media"
 import type { SavedCover } from "@/lib/types"
+import { useSectionReady } from "@/lib/section"
 import { cn, message } from "@/lib/utils"
 import { useLibrary } from "@/stores/library"
 
@@ -17,12 +19,23 @@ export function CoverGallery() {
   const [pending, setPending] = useState<SavedCover | null>(null)
   const [removing, setRemoving] = useState(false)
   const [order, setOrder] = useState<"newest" | "oldest" | "used">("newest")
+  useSectionReady(ready)
   const shown = useMemo(() => {
     const next = [...covers]
     if (order === "used") next.sort((left, right) => right.uses - left.uses || right.addedAt - left.addedAt)
     else next.sort((left, right) => (order === "newest" ? right.addedAt - left.addedAt : left.addedAt - right.addedAt))
     return next
   }, [covers, order])
+  const pageSize = 24
+  const pages = Math.max(1, Math.ceil(shown.length / pageSize))
+  const [page, setPage] = useState(0)
+  const safePage = Math.min(page, pages - 1)
+  const pageStart = safePage * pageSize
+  const pageCovers = shown.slice(pageStart, pageStart + pageSize)
+
+  useEffect(() => {
+    setPage(0)
+  }, [order])
 
   useEffect(() => {
     if (!api.desktop()) {
@@ -103,11 +116,7 @@ export function CoverGallery() {
           </select>
         </div>
       </header>
-      {!ready ? (
-        <div className="flex flex-1 items-center justify-center">
-          <CubeLoader label="Loading covers" />
-        </div>
-      ) : covers.length === 0 ? (
+      {!ready ? null : covers.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
           <Images className="mb-3 size-10 text-primary" />
           <h3 className="serif text-3xl">No covers yet</h3>
@@ -115,8 +124,10 @@ export function CoverGallery() {
         </div>
       ) : (
         <ul className="grid min-h-0 flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] content-start gap-3 overflow-auto px-4 pb-6 sm:px-6">
-          {shown.map((cover, index) => (
-            <li key={cover.path} style={{ contentVisibility: "auto", containIntrinsicSize: "12rem" }}>
+          {pageCovers.map((cover, offset) => {
+            const index = pageStart + offset
+            return (
+            <li key={cover.path}>
               <div className="relative">
                 <button type="button" className="w-full cursor-pointer text-left" onClick={() => setViewing(index)}>
                   <LocalCover path={cover.path} className="aspect-square w-full rounded-xl" />
@@ -133,9 +144,11 @@ export function CoverGallery() {
                 </button>
               </div>
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
+      {ready && covers.length > 0 ? <Pager page={safePage} pages={pages} onPage={setPage} /> : null}
       {current && viewing != null ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/78 p-4" onClick={() => setViewing(null)}>
           <button type="button" className="absolute top-4 right-4 cursor-pointer rounded-md p-2 text-white" aria-label="Close" onClick={() => setViewing(null)}>
@@ -228,12 +241,9 @@ function LocalCover({ path, className, style }: { path: string; className?: stri
   }
 
   return (
-    <img
+    <FittedImage
       src={src}
-      alt=""
-      loading="lazy"
-      decoding="async"
-      className={cn("object-cover", className)}
+      className={className}
       style={style}
       onError={() => {
         if (triedFile) {

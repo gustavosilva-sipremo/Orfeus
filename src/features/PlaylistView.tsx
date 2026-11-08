@@ -3,7 +3,6 @@ import { ArrowDown, ArrowUp, Disc, Package, Play, Trash2 } from "lucide-react"
 import { useEffect, useMemo, useState, type DragEvent } from "react"
 import { Cover } from "@/components/Cover"
 import { Button } from "@/components/ui/button"
-import { BrowseSkeleton } from "@/components/ui/skeleton"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { BurnDialog } from "@/features/BurnDialog"
@@ -14,6 +13,7 @@ import * as api from "@/lib/api"
 import { imageFileFromList, imageFromClipboard, isImagePath, stageImageFile, watchCoverDrop } from "@/lib/covers"
 import { artistLabel, formatDuration, loopHint, loopLabel, nextLoop, sourceLabel, tally } from "@/lib/format"
 import type { Track } from "@/lib/types"
+import { useSectionReady } from "@/lib/section"
 import { message } from "@/lib/utils"
 import { useLibrary } from "@/stores/library"
 import { usePlayer } from "@/stores/player"
@@ -40,6 +40,7 @@ export function PlaylistView({ id }: { id: string }) {
   const [burnOpen, setBurnOpen] = useState(false)
   const [extractOpen, setExtractOpen] = useState(false)
   const [coverArmed, setCoverArmed] = useState(false)
+  useSectionReady(ready)
 
   const ordered = useMemo(() => {
     if (!playlist) return []
@@ -71,13 +72,7 @@ export function PlaylistView({ id }: { id: string }) {
     return () => window.removeEventListener("paste", onPaste)
   }, [coverArmed, id])
 
-  if (!ready) {
-    return (
-      <section className="flex h-full min-h-0 flex-col pt-4">
-        <BrowseSkeleton />
-      </section>
-    )
-  }
+  if (!ready) return null
 
   if (!playlist) {
     return <p className="p-6 text-muted-foreground">That playlist is no longer here.</p>

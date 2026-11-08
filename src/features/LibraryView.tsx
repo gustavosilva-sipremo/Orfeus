@@ -1,17 +1,17 @@
 import { open } from "@tauri-apps/plugin-dialog"
 import { Disc, Download, FolderOpen, FolderSync, ListPlus, MoreHorizontal, Music, Pencil, SlidersHorizontal, Trash2, Upload, Youtube } from "lucide-react"
-import { lazy, Suspense, useEffect, useRef, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Slider } from "@/components/ui/slider"
-import { BrowseSkeleton } from "@/components/ui/skeleton"
 import { BurnDialog } from "@/features/BurnDialog"
 import { ExtractDialog } from "@/features/ExtractDialog"
 import { TrackBrowse } from "@/features/TrackBrowse"
 import * as api from "@/lib/api"
 import type { Track, WatchedFolder } from "@/lib/types"
 import { tally } from "@/lib/format"
+import { useSectionReady } from "@/lib/section"
 import { message } from "@/lib/utils"
 import { useLibrary } from "@/stores/library"
 import { usePlayer } from "@/stores/player"
@@ -28,9 +28,10 @@ export function LibraryView() {
   const shelves = useLibrary((state) => state.shelves)
   const view = useLibrary((state) => state.view)
   const shelfId = view.kind === "library" ? view.id : ""
-  const tracks = shelfId ? allTracks.filter((track) => track.shelfId === shelfId) : allTracks
+  const tracks = useMemo(() => (shelfId ? allTracks.filter((track) => track.shelfId === shelfId) : allTracks), [allTracks, shelfId])
   const shelfName = shelves.find((shelf) => shelf.id === shelfId)?.name ?? "Library"
   const ready = useLibrary((state) => state.ready)
+  useSectionReady(ready)
   const playlists = useLibrary((state) => state.playlists)
   const importPaths = useLibrary((state) => state.importPaths)
   const deleteTrack = useLibrary((state) => state.deleteTrack)
@@ -226,9 +227,7 @@ export function LibraryView() {
           ))}
         </div>
       ) : null}
-      {!ready ? (
-        <BrowseSkeleton />
-      ) : tracks.length === 0 ? (
+      {!ready ? null : tracks.length === 0 ? (
         <EmptyLibrary filtered={false} onFiles={() => void chooseFiles().catch(showError)} onFolder={() => void chooseFolder().catch(showError)} />
       ) : (
         <TrackBrowse

@@ -2,10 +2,10 @@ import { Trash2 } from "lucide-react"
 import { useState } from "react"
 import { Cover } from "@/components/Cover"
 import { Button } from "@/components/ui/button"
-import { BrowseSkeleton } from "@/components/ui/skeleton"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { artistLabel } from "@/lib/format"
 import type { Track } from "@/lib/types"
+import { useSectionReady } from "@/lib/section"
 import { message } from "@/lib/utils"
 import { useLibrary } from "@/stores/library"
 
@@ -15,6 +15,7 @@ export function TrashView() {
   const restoreTrack = useLibrary((state) => state.restoreTrack)
   const purgeTrack = useLibrary((state) => state.purgeTrack)
   const [pending, setPending] = useState<Track | null>(null)
+  useSectionReady(ready)
 
   return (
     <section className="flex h-full min-h-0 flex-col">
@@ -24,9 +25,7 @@ export function TrashView() {
           {ready ? (trash.length === 1 ? "1 track can be restored or deleted." : `${trash.length} tracks can be restored or deleted.`) : "Opening the trash…"}
         </p>
       </header>
-      {!ready ? (
-        <BrowseSkeleton />
-      ) : trash.length === 0 ? (
+      {!ready ? null : trash.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
           <Trash2 className="mb-3 size-10 text-primary" />
           <h3 className="serif text-3xl">Trash is empty</h3>
