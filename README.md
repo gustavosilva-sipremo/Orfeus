@@ -7,16 +7,17 @@ Version 1.7.0. The interface is in English.
 ## What it does
 
 - Import songs or a whole folder into one or more libraries. The first library keeps a library icon. Extra libraries can be marked as music or a podcast.
-- Play the visible list in order, or keep the queue on the current track. Changing that choice takes effect during the song that is already playing.
+- Play the visible list in order, or keep the queue on the current track. Those two choices sit on the left of the playback bar. Speed, crossfade, and volume sit on the right, with the transport centered between them. Changing the queue choice takes effect during the song that is already playing.
 - Change speed to 0.5×, 1×, 1.2×, 1.5×, and 2×, and play backward at −1.2× and −1.5×.
 - Edit a track’s title, artist, album, volume, lyrics, and cover. A cover can be pasted with Ctrl+V, dropped on the artwork, or chosen from a file. Search can fill the cover, lyrics, and timing from MusicBrainz, Cover Art Archive, iTunes, and LRCLIB. A searched image is kept only after you save it on a track or a playlist, and the same picture is stored once.
 - Build playlists, pin a favorite to the top of the sidebar, and set playback to stop, repeat the track, or repeat the playlist.
 - Extract several library tracks as one zip, or extract a playlist as `01.Track name.mp3` into a folder you choose. The folder is remembered. Extraction starts when you press Extract.
 - Import a playlist from an `.orfeus` package.
 - Save a YouTube link as a 320 kbps MP3. You choose whether to keep the video, which resolution to keep, and where the files go.
-- Open a stage with the cover, a spectrum, and timed lyrics. The corner shows the playlist or the library the song came from.
+- Open a stage with the cover, a spectrum, and timed lyrics by clicking the cover in the playback bar. The corner shows the playlist or the library the song came from.
 - Keep listening history by day, month, and year, with the time written on each bar.
-- Burn an audio CD for a CD player, a data CD, or a data DVD. An audio CD needs `ffmpeg`. Every disc needs `xorriso`.
+- Burn an audio CD for a CD player, a data CD, or a data DVD. An audio CD needs `ffmpeg`. Every disc needs `xorriso`. A blank disc is written as it is. A disc that already has data is erased only when the drive can do that, and the message names the real `xorriso` failure.
+- Read an audio CD or the music files on a data CD or DVD into the library and open a playlist for that disc. An audio CD needs `cdparanoia`. A data disc is opened with `udisksctl` when it is not already mounted. `ffmpeg` stores the ripped tracks as FLAC when it is available.
 - Move a library track to Trash, then restore it or delete the file after confirmation.
 
 ## Stack
@@ -50,7 +51,7 @@ Orfeus installs for the current user. The launcher is `~/.local/bin/orfeus`.
 On CachyOS or Arch, install the libraries used to build and the tools used by YouTube import:
 
 ```bash
-sudo pacman -S --needed webkit2gtk-4.1 gtk3 pkg-config file openssl python ffmpeg
+sudo pacman -S --needed webkit2gtk-4.1 gtk3 pkg-config file openssl python ffmpeg xorriso cdparanoia udisks2
 ```
 
 Build the AppImage and install it:
@@ -67,7 +68,7 @@ On CachyOS, this installs the native release binary instead of the AppImage:
 ./scripts/cachyos.sh
 ```
 
-Burning needs `xorriso`. An audio CD also needs `ffmpeg`. Listing the drive needs `lsblk`. Audio CD is only for a blank CD. Data CD and data DVD keep the original files.
+Burning needs `xorriso`. An audio CD also needs `ffmpeg`. Listing the drive needs `lsblk`. A blank disc is left alone. A written disc is erased only when it can be rewritten. Reading an audio CD needs `cdparanoia`. Reading music files from a data disc needs `udisks2` when the disc is not already mounted. The tracks are added to the library under a new playlist.
 
 ### Uninstall on Linux
 
@@ -126,7 +127,7 @@ src-tauri\target\release\bundle\nsis\Orfeus_1.7.0_x64-setup.exe
 
 The file name follows `version` in `src-tauri/tauri.conf.json`. The wizard asks you to accept the terms, then whether to install for you or for everyone, then checks this PC. It installs Python, FFmpeg, and xorriso only when they are missing, and adds them to the user PATH. WebView2 is downloaded when Windows does not already have it. The setup is unsigned: if SmartScreen appears, choose More info, then Run anyway. The setup icon and the uninstall icon are the Orfeus icon.
 
-YouTube import needs Python (`py`, `python`, or `python3`) and `ffmpeg` on the PATH. Burning needs `xorriso` and, for an audio CD, `ffmpeg`. The drive list uses Windows PowerShell. Audio CD is a blank CD for a CD player. Data CD and data DVD keep the original files.
+YouTube import needs Python (`py`, `python`, or `python3`) and `ffmpeg` on the PATH. Burning needs `xorriso` and, for an audio CD, `ffmpeg`. The drive list uses Windows PowerShell. A blank disc is left alone. A written disc is erased only when it can be rewritten. Reading an audio CD from Windows needs `cdparanoia` on the PATH. A data disc that is already mounted contributes its music files, and the tracks are added to the library under a new playlist.
 
 ### Uninstall on Windows
 

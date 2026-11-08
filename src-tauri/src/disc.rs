@@ -195,9 +195,7 @@ fn burn(app: &AppHandle, dir: &Path, kind: &str, device: &str, jobs: &[Job]) -> 
     args.push("-commit".into());
     match run_xorriso(&args) {
         Ok(()) => Ok(()),
-        Err(message) if medium == Medium::Written && blank_failure(&message) => {
-            Err("This disc already has data and cannot be erased. Use a blank disc or a rewritable one.".into())
-        }
+        Err(message) if medium == Medium::Written && blank_failure(&message) => Err(not_erasable("disc")),
         Err(message) => Err(message),
     }
 }
@@ -217,11 +215,23 @@ fn burn_audio(device: &str, wavs: &[PathBuf]) -> Result<(), String> {
     }
     run_xorriso(&args).map_err(|message| {
         if blank_failure(&message) {
-            "This disc already has data and cannot be erased. Use a blank CD or a rewritable one.".into()
+            not_erasable("CD")
         } else {
             message
         }
     })
+}
+
+fn not_erasable(kind: &str) -> String {
+    format!("This disc already has data and cannot be erased. Use a blank {kind} or a rewritable one.")
+}
+
+fn command_text(output: &std::process::Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -236,12 +246,7 @@ fn medium_state(device: &str) -> Result<Medium, String> {
         .args(["-outdev", &burn_target(device), "-toc"])
         .output()
         .map_err(|_| "Install xorriso to burn a disc.".to_string())?;
-    let text = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    classify_medium(&text, output.status.success())
+    classify_medium(&command_text(&output), output.status.success())
 }
 
 fn classify_medium(text: &str, success: bool) -> Result<Medium, String> {
@@ -278,12 +283,7 @@ fn run_xorriso(args: &[String]) -> Result<(), String> {
     if output.status.success() {
         return Ok(());
     }
-    let text = format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    Err(xorriso_reason(&text))
+    Err(xorriso_reason(&command_text(&output)))
 }
 
 fn xorriso_reason(text: &str) -> String {
@@ -519,11 +519,7 @@ fn audio_track_count(device: &str) -> Result<Option<usize>, String> {
     let Ok(output) = output else {
         return Ok(None);
     };
-    let text = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let text = command_text(&output);
     let count = cdda_tracks(&text);
     if count > 0 {
         return Ok(Some(count));
@@ -614,11 +610,7 @@ fn mount_disc(device: &str) -> Result<PathBuf, String> {
         .args(["mount", "-b", device])
         .output()
         .map_err(|_| "Could not open this data disc. Install udisks.".to_string())?;
-    let text = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let text = command_text(&output);
     if let Some(path) = text.split(" at ").nth(1) {
         let path = PathBuf::from(path.trim());
         if path.is_dir() {

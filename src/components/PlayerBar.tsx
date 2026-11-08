@@ -6,6 +6,7 @@ import { Slider } from "@/components/ui/slider"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { artistLabel, crossfadeLabel, formatClock, loopHint, loopLabel, rateLabel } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import type { LoopMode } from "@/lib/types"
 import { usePlayer, type PlayScope } from "@/stores/player"
 
 export function PlayerBar() {
@@ -45,14 +46,8 @@ export function PlayerBar() {
               <span className="block truncate text-sm text-muted-foreground">{trackId ? artistLabel(artist) : "Pick a track"}</span>
             </span>
           </button>
-          <div className="hidden items-center gap-2 lg:flex">
-            <ScopeToggle scope={playScope} onChange={(scope) => void setPlayScope(scope)} />
-            <Hint label={loopLabel(loopMode)} detail={loopHint(loopMode)}>
-              <Button variant="outline" size="sm" onClick={() => void cycleLoop()} disabled={disabled} aria-label={loopLabel(loopMode)}>
-                {loopMode === "track" ? <Repeat1 className="size-4" /> : <Repeat className="size-4" />}
-                {loopLabel(loopMode)}
-              </Button>
-            </Hint>
+          <div className="hidden lg:contents">
+            <QueueSide scope={playScope} onScope={(scope) => void setPlayScope(scope)} loopMode={loopMode} onLoop={() => void cycleLoop()} disabled={disabled} />
           </div>
         </div>
         <div className="flex w-full flex-col gap-2 lg:w-[min(28rem,36vw)]">
@@ -100,14 +95,8 @@ export function PlayerBar() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 lg:justify-start">
-          <div className="flex items-center gap-2 lg:hidden">
-            <ScopeToggle scope={playScope} onChange={(scope) => void setPlayScope(scope)} />
-            <Hint label={loopLabel(loopMode)} detail={loopHint(loopMode)}>
-              <Button variant="outline" size="sm" onClick={() => void cycleLoop()} disabled={disabled} aria-label={loopLabel(loopMode)}>
-                {loopMode === "track" ? <Repeat1 className="size-4" /> : <Repeat className="size-4" />}
-                {loopLabel(loopMode)}
-              </Button>
-            </Hint>
+          <div className="contents lg:hidden">
+            <QueueSide scope={playScope} onScope={(scope) => void setPlayScope(scope)} loopMode={loopMode} onLoop={() => void cycleLoop()} disabled={disabled} />
           </div>
           <Hint label={`Speed ${rateLabel(rate)}`} detail="Each click moves through 1×, faster, reverse, and half speed.">
             <Button variant="outline" size="sm" onClick={() => void cycleRate()} disabled={disabled} aria-label={`Speed ${rateLabel(rate)}`}>
@@ -135,6 +124,32 @@ function Hint({ label, detail, children }: { label: string; detail?: string; chi
         {detail ? <span className="mt-1 block text-white/70">{detail}</span> : null}
       </TooltipContent>
     </Tooltip>
+  )
+}
+
+function QueueSide({
+  scope,
+  onScope,
+  loopMode,
+  onLoop,
+  disabled,
+}: {
+  scope: PlayScope
+  onScope: (scope: PlayScope) => void
+  loopMode: LoopMode
+  onLoop: () => void
+  disabled: boolean
+}) {
+  return (
+    <>
+      <ScopeToggle scope={scope} onChange={onScope} />
+      <Hint label={loopLabel(loopMode)} detail={loopHint(loopMode)}>
+        <Button variant="outline" size="sm" onClick={onLoop} disabled={disabled} aria-label={loopLabel(loopMode)}>
+          {loopMode === "track" ? <Repeat1 className="size-4" /> : <Repeat className="size-4" />}
+          {loopLabel(loopMode)}
+        </Button>
+      </Hint>
+    </>
   )
 }
 
