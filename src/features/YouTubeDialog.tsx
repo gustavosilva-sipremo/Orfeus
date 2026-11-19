@@ -195,7 +195,7 @@ export function YouTubeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
           <DialogHeader>
             <DialogTitle>From YouTube</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[min(36rem,calc(100vh-8rem))] space-y-4 overflow-auto pr-1">
+          <div data-wheel-scroll="" className="max-h-[min(36rem,calc(100vh-8rem))] space-y-4 overflow-auto pr-1">
             <form
               className="flex gap-2"
               onSubmit={(event) => {

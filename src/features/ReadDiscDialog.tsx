@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { CubeLoader } from "@/components/kit/CubeLoader"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { DiscError } from "@/features/DiscError"
 import * as api from "@/lib/api"
 import type { OpticalDrive } from "@/lib/types"
 import { message } from "@/lib/utils"
@@ -49,7 +50,7 @@ export function ReadDiscDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!busy) onOpenChange(next) }}>
-      <DialogContent>
+      <DialogContent wide>
         <DialogHeader>
           <DialogTitle>Read a CD or a DVD</DialogTitle>
         </DialogHeader>
@@ -64,7 +65,7 @@ export function ReadDiscDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           </select>
         </label>
         {progress ? <p className="mt-3 text-sm">{progress}</p> : null}
-        {error ? <p className="mt-3 text-sm text-red-300">{error}</p> : null}
+        <DiscError error={error} />
         <div className="mt-4 flex justify-end">
           <Button disabled={busy || !device} onClick={() => void read()}>
             {busy ? <CubeLoader size={18} label={progress || "Reading the disc"} /> : null}

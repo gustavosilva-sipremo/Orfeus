@@ -1,27 +1,20 @@
-import { open } from "@tauri-apps/plugin-dialog"
-import { Disc, Download, FolderOpen, FolderSync, ListPlus, MoreHorizontal, Music, Pencil, SlidersHorizontal, Trash2, Upload, Youtube } from "lucide-react"
-import { lazy, Suspense, useEffect, useMemo, useState } from "react"
+import { Download, FolderSync, ListPlus, MoreHorizontal, Music, Pencil, SlidersHorizontal, Trash2 } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Slider } from "@/components/ui/slider"
-import { BurnDialog } from "@/features/BurnDialog"
-import { ReadDiscDialog } from "@/features/ReadDiscDialog"
-import { ExtractDialog } from "@/features/ExtractDialog"
+import { requestExport, requestFileImport, requestFolderImport } from "@/features/LibraryMenu"
 import { TrackBrowse } from "@/features/TrackBrowse"
 import * as api from "@/lib/api"
+import { useExportDir } from "@/lib/export-dir"
 import type { Track, WatchedFolder } from "@/lib/types"
 import { tally } from "@/lib/format"
 import { useSectionReady } from "@/lib/section"
+import { setSelection, useSelection } from "@/lib/selection"
 import { message } from "@/lib/utils"
 import { useLibrary } from "@/stores/library"
 import { usePlayer } from "@/stores/player"
-
-const YouTubeDialog = lazy(() => import("@/features/YouTubeDialog").then((mod) => ({ default: mod.YouTubeDialog })))
-
-const exportKey = "orfeus-export-dir"
-
-const audioFilter = [{ name: "Audio", extensions: ["mp3", "flac", "ogg", "opus", "wav", "m4a", "aac", "mp4", "alac"] }]
 
 export function LibraryView() {
   const allTracks = useLibrary((state) => state.tracks)
@@ -33,77 +26,24 @@ export function LibraryView() {
   const ready = useLibrary((state) => state.ready)
   useSectionReady(ready)
   const playlists = useLibrary((state) => state.playlists)
-  const importPaths = useLibrary((state) => state.importPaths)
   const deleteTrack = useLibrary((state) => state.deleteTrack)
   const addToPlaylist = useLibrary((state) => state.addToPlaylist)
-  const exportTracks = useLibrary((state) => state.exportTracks)
   const setEditingId = useLibrary((state) => state.setEditingId)
   const playTracks = usePlayer((state) => state.playTracks)
   const currentId = usePlayer((state) => state.trackId)
-  const [selected, setSelected] = useState<string[]>([])
+  const selected = useSelection()
+  const exportDir = useExportDir()
   const [addId, setAddId] = useState<string | null>(null)
-  const [folderOpen, setFolderOpen] = useState(false)
-  const [recursive, setRecursive] = useState(true)
-  const [watch, setWatch] = useState(true)
   const [watched, setWatched] = useState<WatchedFolder[]>([])
   const [volumeTrack, setVolumeTrack] = useState<Track | null>(null)
-  const [exportDir, setExportDir] = useState(() => localStorage.getItem(exportKey) ?? "")
-  const [youtubeOpen, setYoutubeOpen] = useState(false)
-  const [burnOpen, setBurnOpen] = useState(false)
-  const [readOpen, setReadOpen] = useState(false)
-  const [extractIds, setExtractIds] = useState<string[]>([])
+  useEffect(() => {
+    setSelection([])
+  }, [shelfId])
 
   useEffect(() => {
     if (!api.desktop()) return
     void api.listWatched().then(setWatched).catch(() => undefined)
   }, [ready, tracks.length])
-
-  async function chooseFiles() {
-    if (!api.desktop()) {
-      useLibrary.setState({ notice: "File import opens in the desktop app." })
-      return
-    }
-    const picked = await open({ multiple: true, title: "Import music", filters: audioFilter })
-    const paths = Array.isArray(picked) ? picked : picked ? [picked] : []
-    if (paths.length) await importPaths(paths)
-  }
-
-  async function chooseFolder() {
-    setFolderOpen(true)
-    if (!api.desktop()) return
-    setWatched(await api.listWatched().catch(() => []))
-  }
-
-  async function confirmFolder() {
-    if (!api.desktop()) {
-      useLibrary.setState({ notice: "Folder import opens in the desktop app." })
-      return
-    }
-    const picked = await open({ directory: true, title: "Music folder" })
-    if (typeof picked !== "string") return
-    setFolderOpen(false)
-    await importPaths([picked], recursive, watch)
-    setWatched(await api.listWatched().catch(() => []))
-  }
-
-  function rememberExport(path: string) {
-    localStorage.setItem(exportKey, path)
-    setExportDir(path)
-  }
-
-  async function chooseExportDir() {
-    if (!api.desktop()) {
-      useLibrary.setState({ notice: "The export folder is chosen in the desktop app." })
-      return
-    }
-    const picked = await open({ directory: true, title: "Where to save exports" })
-    if (typeof picked === "string") rememberExport(picked)
-  }
-
-  function beginExport(ids: string[]) {
-    if (!ids.length) return
-    setExtractIds(ids)
-  }
 
   async function saveGain(track: Track, gain: number) {
     await useLibrary.getState().updateTrack({
@@ -136,7 +76,7 @@ export function LibraryView() {
   }
 
   function toggle(id: string) {
-    setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))
+    setSelection(selected.includes(id) ? selected.filter((item) => item !== id) : [...selected, id])
   }
 
   return (
@@ -146,55 +86,6 @@ export function LibraryView() {
           <h2 className="serif truncate text-2xl sm:text-3xl">{shelfName}</h2>
           <p className="text-base text-muted-foreground">{ready ? `${tracks.length} tracks · ${tally(tracks)}` : "Opening the library…"}</p>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="border-white/10 bg-black/35 backdrop-blur-md hover:bg-black/55">Menu</Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => setYoutubeOpen(true)}>
-              <Youtube className="size-4" />
-              YouTube
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void chooseFiles().catch(showError)}>
-              <Upload className="size-4" />
-              Files
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void chooseFolder().catch(showError)}>
-              <FolderOpen className="size-4" />
-              Folder
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void chooseExportDir().catch(showError)}>
-              <FolderOpen className="size-4" />
-              {exportDir ? "Change folder" : "Save location"}
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!selected.length} onSelect={() => beginExport(selected)}>
-              <Download className="size-4" />
-              Export
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setReadOpen(true)}>
-              <Disc className="size-4" />
-              Read CD or DVD
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!selected.length} onSelect={() => setBurnOpen(true)}>
-              <Disc className="size-4" />
-              Burn CD or DVD
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <BurnDialog open={burnOpen} trackIds={selected} onOpenChange={setBurnOpen} />
-        <ReadDiscDialog open={readOpen} onOpenChange={setReadOpen} />
-        <ExtractDialog
-          open={extractIds.length > 0}
-          title="Export tracks"
-          hint="The tracks are saved as one zip, named 01. Track name, in the folder you choose."
-          onOpenChange={(open) => { if (!open) setExtractIds([]) }}
-          onStart={(dir) => exportTracks(extractIds, dir)}
-        />
-        {youtubeOpen ? (
-          <Suspense fallback={null}>
-            <YouTubeDialog open={youtubeOpen} onOpenChange={setYoutubeOpen} />
-          </Suspense>
-        ) : null}
       </header>
       {exportDir ? (
         <div className="flex flex-wrap items-center gap-2 px-4 pb-2 text-sm text-muted-foreground sm:px-6">
@@ -214,19 +105,19 @@ export function LibraryView() {
         </div>
       ) : null}
       {!ready ? null : tracks.length === 0 ? (
-        <EmptyLibrary filtered={false} onFiles={() => void chooseFiles().catch(showError)} onFolder={() => void chooseFolder().catch(showError)} />
+        <EmptyLibrary filtered={false} onFiles={() => requestFileImport()} onFolder={() => requestFolderImport()} />
       ) : (
         <TrackBrowse
           tracks={tracks}
           currentId={currentId}
           onOpen={playVisible}
           selectedIds={selected}
-          onSelectVisible={(ids, on) => setSelected((current) => (on ? [...new Set([...current, ...ids])] : current.filter((id) => !ids.includes(id))))}
+          onSelectVisible={(ids, on) => setSelection(on ? [...new Set([...selected, ...ids])] : selected.filter((id) => !ids.includes(id)))}
           contextActions={(track) => [
             { label: "Edit", icon: <Pencil className="size-4" />, onSelect: () => setEditingId(track.id) },
             { label: "Track volume", icon: <SlidersHorizontal className="size-4" />, onSelect: () => setVolumeTrack(track) },
             { label: "Add to playlist", icon: <ListPlus className="size-4" />, onSelect: () => setAddId(track.id) },
-            { label: "Export", icon: <Download className="size-4" />, onSelect: () => beginExport([track.id]) },
+            { label: "Export", icon: <Download className="size-4" />, onSelect: () => requestExport([track.id]) },
             { label: "Move to Trash", icon: <Trash2 className="size-4" />, onSelect: () => void deleteTrack(track.id).catch(showError) },
           ]}
           actions={(track) => (
@@ -239,10 +130,10 @@ export function LibraryView() {
                 onChange={() => toggle(track.id)}
                 aria-label={`Select ${track.title}`}
               />
-              <TrackMenu track={track} onEdit={() => setEditingId(track.id)} onAdd={() => setAddId(track.id)} onVolume={() => setVolumeTrack(track)} onExport={() => beginExport([track.id])} onDelete={() => void deleteTrack(track.id).catch(showError)} />
+              <TrackMenu track={track} onEdit={() => setEditingId(track.id)} onAdd={() => setAddId(track.id)} onVolume={() => setVolumeTrack(track)} onExport={() => requestExport([track.id])} onDelete={() => void deleteTrack(track.id).catch(showError)} />
             </>
           )}
-          empty={<EmptyLibrary filtered onFiles={() => void chooseFiles().catch(showError)} onFolder={() => void chooseFolder().catch(showError)} />}
+          empty={<EmptyLibrary filtered onFiles={() => requestFileImport()} onFolder={() => requestFolderImport()} />}
         />
       )}
       <Dialog open={addId != null} onOpenChange={(open) => !open && setAddId(null)}>
@@ -267,23 +158,6 @@ export function LibraryView() {
               </Button>
             ))}
           </div>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={folderOpen} onOpenChange={setFolderOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Music folder</DialogTitle>
-          </DialogHeader>
-          <label className="flex cursor-pointer items-center gap-3 text-base">
-            <input type="checkbox" className="size-5 cursor-pointer" checked={recursive} onChange={(event) => setRecursive(event.target.checked)} />
-            Include subfolders
-          </label>
-          <label className="mt-3 flex cursor-pointer items-center gap-3 text-base">
-            <input type="checkbox" className="size-5 cursor-pointer" checked={watch} onChange={(event) => setWatch(event.target.checked)} />
-            Update the list when new music arrives
-          </label>
-          <p className="mt-3 text-sm text-muted-foreground">Orfeus checks the folder from time to time and brings in new files without another import.</p>
-          <Button className="mt-4" onClick={() => void confirmFolder().catch(showError)}>Choose folder</Button>
         </DialogContent>
       </Dialog>
       <Dialog open={volumeTrack != null} onOpenChange={(open) => !open && setVolumeTrack(null)}>

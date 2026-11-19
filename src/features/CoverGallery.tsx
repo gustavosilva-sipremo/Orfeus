@@ -123,7 +123,7 @@ export function CoverGallery() {
           <p className="mt-2 max-w-sm text-base text-muted-foreground">A cover shows up here after you save it on a track or a playlist.</p>
         </div>
       ) : (
-        <ul className="grid min-h-0 flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] content-start gap-3 overflow-auto px-4 pb-6 sm:px-6">
+        <ul data-wheel-scroll="" className="grid min-h-0 flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] content-start gap-3 overflow-auto px-4 pb-6 sm:px-6">
           {pageCovers.map((cover, offset) => {
             const index = pageStart + offset
             return (

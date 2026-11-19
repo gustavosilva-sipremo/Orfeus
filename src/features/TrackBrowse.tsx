@@ -1,8 +1,7 @@
 import { LayoutGrid, List } from "lucide-react"
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type WheelEvent } from "react"
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react"
 import { Cover } from "@/components/Cover"
 import { Pager } from "@/components/Pager"
-import { RowSpectrum } from "@/components/Visualizer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
@@ -101,6 +100,8 @@ export function TrackBrowse({
   const pageTracks = visible.slice(pageStart, pageStart + pageSize)
   const visibleRef = useRef(visible)
   visibleRef.current = visible
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [scroller, setScroller] = useState<HTMLElement | null>(null)
   useEffect(() => {
     setPage(0)
   }, [filter, listingKey, mode, query, sort])
@@ -121,6 +122,18 @@ export function TrackBrowse({
     }
   }, [menu])
 
+  useEffect(() => {
+    const node = rootRef.current
+    if (!node) return
+    const onWheel = (event: WheelEvent) => {
+      if (!event.altKey) return
+      event.preventDefault()
+      setSize((current) => Math.min(100, Math.max(0, current + (event.deltaY > 0 ? -6 : 6))))
+    }
+    node.addEventListener("wheel", onWheel, { passive: false })
+    return () => node.removeEventListener("wheel", onWheel)
+  }, [])
+
   function openMenu(track: Track, event: MouseEvent) {
     if (!contextActions) return
     event.preventDefault()
@@ -129,14 +142,16 @@ export function TrackBrowse({
     setMenu({ track, x, y })
   }
 
-  function resizeFromWheel(event: WheelEvent) {
-    if (!event.altKey) return
-    event.preventDefault()
-    setSize((current) => Math.min(100, Math.max(0, current + (event.deltaY > 0 ? -6 : 6))))
+  function changePage(next: number) {
+    setPage(next)
+    scroller?.scrollTo({ top: 0 })
   }
 
+  const actionSlot = Boolean(actions || (reorder && sort === "manual"))
+  const columns = actionSlot ? "auto minmax(0,1fr) auto auto" : "auto minmax(0,1fr) auto"
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col" onWheel={resizeFromWheel}>
+    <div ref={rootRef} className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 px-6 pb-3">
         <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search" aria-label="Search tracks" maxLength={80} className="w-44" />
         <select value={filter} onChange={(event) => setFilter(event.target.value as Filter)} aria-label="Filter" className={selectClass}>
@@ -180,14 +195,14 @@ export function TrackBrowse({
       {visible.length === 0 ? (
         <div className="flex flex-1 items-center justify-center px-6 text-center">{empty ?? <p className="text-base text-muted-foreground">No tracks match this filter.</p>}</div>
       ) : mode === "list" ? (
-        <ul className="min-h-0 flex-1 space-y-1 overflow-auto px-4 pt-4 pb-4">
+        <ul ref={setScroller} data-wheel-scroll="" className="min-h-0 flex-1 space-y-1 overflow-auto px-4 pt-4 pb-4">
           {pageTracks.map((track, offset) => {
             const index = pageStart + offset
             return (
             <li key={track.id}>
               <div
-                className={`grid cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 text-left hover:bg-white/10 ${currentId === track.id ? "glass ring-1 ring-white/50" : ""} ${isRecent(track.addedAt) && currentId !== track.id ? "ring-1 ring-gold/35" : ""}`}
-                style={{ gridTemplateColumns: "auto minmax(0,1fr) auto auto auto" }}
+                className={`relative grid cursor-pointer gap-x-3 gap-y-1 overflow-hidden rounded-2xl px-3 py-2 text-left hover:bg-white/10 ${currentId === track.id ? "glass ring-1 ring-white/50" : ""} ${isRecent(track.addedAt) && currentId !== track.id ? "ring-1 ring-gold/35" : ""}`}
+                style={{ gridTemplateColumns: columns }}
                 onClick={() => onOpen(visible, index)}
                 onContextMenu={(event) => openMenu(track, event)}
                 onKeyDown={(event) => {
@@ -196,8 +211,8 @@ export function TrackBrowse({
                 role="button"
                 tabIndex={0}
               >
-                <Cover path={track.coverPath} className={`rounded ${currentId === track.id ? "ring-2 ring-white" : ""}`} style={{ width: cover, height: cover }} />
-                <span className="min-w-0">
+                <Cover path={track.coverPath} className={`relative self-center rounded ${currentId === track.id ? "ring-2 ring-white" : ""}`} style={{ width: cover, height: cover }} />
+                <span className="relative min-w-0 self-center">
                   <span className={`block truncate ${size > 60 ? "text-lg" : "text-base"}`}>{isRecent(track.addedAt) ? <span className={newTag}>New</span> : null}{track.title}</span>
                   {currentId === track.id ? <span className="text-xs tracking-[0.18em] text-white uppercase">Playing</span> : null}
                   {Math.abs(track.gain - 1) > 0.02 ? <span className="ml-2 text-xs text-muted-foreground">{Math.round(track.gain * 100)}%</span> : null}
@@ -208,13 +223,12 @@ export function TrackBrowse({
                   </span>
                   <span className="block truncate text-xs text-white/45" title={track.path}>{sourceLabel(track)}</span>
                 </span>
-                <RowSpectrum active={currentId === track.id} className="h-8 w-24" />
-                <span className="text-right text-sm text-muted-foreground tabular-nums">
+                <span className="relative self-center text-right text-sm text-muted-foreground tabular-nums">
                   {formatDuration(track.durationMs)}
                   <span className="block">{formatBytes(track.sizeBytes)}</span>
                 </span>
-                {actions || (reorder && sort === "manual") ? (
-                  <span className="flex items-center gap-1" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                {actionSlot ? (
+                  <span className="relative flex items-center gap-1 self-center" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
                     {actions?.(track)}
                     {sort === "manual" ? reorder?.(track) : null}
                   </span>
@@ -225,7 +239,7 @@ export function TrackBrowse({
           })}
         </ul>
       ) : (
-        <ul className="min-h-0 flex-1 overflow-auto px-4 pt-4 pb-4" style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${card}px, 1fr))`, alignContent: "start" }}>
+        <ul ref={setScroller} data-wheel-scroll="" className="min-h-0 flex-1 overflow-auto px-4 pt-4 pb-4" style={{ display: "grid", gap: 12, gridTemplateColumns: `repeat(auto-fill, minmax(${card}px, 1fr))`, alignContent: "start" }}>
           {pageTracks.map((track, offset) => {
             const index = pageStart + offset
             return (
@@ -253,7 +267,6 @@ export function TrackBrowse({
                 <span className={`block truncate ${size > 60 ? "text-lg" : "text-base"} ${currentId === track.id ? "" : "mt-2"}`}>{isRecent(track.addedAt) ? <span className={newTag}>New</span> : null}{track.title}</span>
                 <span className="block truncate text-sm text-muted-foreground">{artistLabel(track.artist)}</span>
                 <span className="block truncate text-xs text-white/45" title={track.path}>{sourceLabel(track)}</span>
-                <RowSpectrum active={currentId === track.id} className="mt-2 h-8 w-full" />
                 <span className="text-sm text-muted-foreground tabular-nums">{formatDuration(track.durationMs)} · {formatBytes(track.sizeBytes)}</span>
               </div>
             </li>
@@ -261,7 +274,7 @@ export function TrackBrowse({
           })}
         </ul>
       )}
-      {visible.length > 0 ? <Pager page={safePage} pages={pages} onPage={setPage} /> : null}
+      {visible.length > 0 ? <Pager page={safePage} pages={pages} onPage={changePage} /> : null}
       {menu && contextActions ? (
         <div className="menu-panel fixed z-50 min-w-48 rounded-md p-1" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
           {contextActions(menu.track).map((action) => (

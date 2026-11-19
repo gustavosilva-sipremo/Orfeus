@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { Cover } from "@/components/Cover"
+import { Pager } from "@/components/Pager"
 import { Button } from "@/components/ui/button"
 import * as api from "@/lib/api"
 import { artistLabel, formatListened } from "@/lib/format"
@@ -46,6 +47,15 @@ export function StatusView() {
   const top = useMemo(() => rank(rows).slice(0, 5), [rows])
   const total = rows.reduce((sum, row) => sum + row.seconds, 0)
   const nextLocked = range.to > Date.now() / 1000
+  const pageSize = 30
+  const pages = Math.max(1, Math.ceil(rows.length / pageSize))
+  const [page, setPage] = useState(0)
+  const safePage = Math.min(page, pages - 1)
+  const history = rows.slice(safePage * pageSize, safePage * pageSize + pageSize)
+
+  useEffect(() => {
+    setPage(0)
+  }, [range.from, range.to, scope])
 
   function shift(dir: number) {
     const next = new Date(anchor)
@@ -68,7 +78,7 @@ export function StatusView() {
   }
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-auto">
+    <section data-wheel-scroll="" className="flex h-full min-h-0 flex-col overflow-auto">
       <header className="px-4 py-3 sm:px-6 sm:py-4">
         <h2 className="serif text-2xl sm:text-3xl">Status</h2>
         <p className="text-base text-muted-foreground">{ready ? `${formatListened(total)} listened` : "Opening the listening history…"}</p>
@@ -118,7 +128,7 @@ export function StatusView() {
             <h3 className="mb-3 text-xs tracking-[0.16em] text-gold uppercase">History</h3>
             {rows.length === 0 ? <p className="text-sm text-muted-foreground">Nothing played in this period.</p> : null}
             <ul className="space-y-1">
-              {rows.map((row) => (
+              {history.map((row) => (
                 <li key={row.id} className="flex items-center gap-3 px-1 py-2">
                   <Cover path={row.coverPath} className="size-10 rounded-md" />
                   <div className="min-w-0 flex-1">
@@ -132,6 +142,7 @@ export function StatusView() {
                 </li>
               ))}
             </ul>
+            <Pager page={safePage} pages={pages} onPage={setPage} />
           </section>
         </div>
       )}

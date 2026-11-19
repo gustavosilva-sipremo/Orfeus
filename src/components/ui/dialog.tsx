@@ -7,15 +7,17 @@ export const Dialog = DialogPrimitive.Root
 export const DialogTrigger = DialogPrimitive.Trigger
 export const DialogClose = DialogPrimitive.Close
 
-export function DialogContent({ className, children, ...props }: ComponentProps<typeof DialogPrimitive.Content>) {
+export function DialogContent({ className, children, wide, ...props }: ComponentProps<typeof DialogPrimitive.Content> & { wide?: boolean }) {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/60" />
       <DialogPrimitive.Content
         className={cn(
-          "glass-strong fixed top-1/2 left-1/2 z-50 w-[min(32rem,calc(100%-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl p-5",
+          "glass-strong fixed top-1/2 left-1/2 z-50 max-h-[min(85vh,52rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl p-5",
+          wide ? "w-[min(44rem,calc(100%-2rem))]" : "w-[min(32rem,calc(100%-2rem))]",
           className,
         )}
+        data-wheel-scroll=""
         {...props}
       >
         {children}

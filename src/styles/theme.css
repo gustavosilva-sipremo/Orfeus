@@ -25,7 +25,7 @@
   --border: rgba(255, 255, 255, 0.12);
   --input: rgba(255, 255, 255, 0.16);
   --ring: #ffffff;
-  --radius: 0.9rem;
+  --radius: 0.72rem;
   --pigment: #ff453a;
   --gold: #d4d4d4;
 }
@@ -58,6 +58,8 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 6px);
+  --radius-2xl: 0.8rem;
+  --radius-3xl: 1.2rem;
 }
 
 @layer base {

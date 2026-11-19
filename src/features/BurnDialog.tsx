@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react"
 import { CubeLoader } from "@/components/kit/CubeLoader"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { DiscError } from "@/features/DiscError"
 import * as api from "@/lib/api"
 import { formatBytes, formatMinutes } from "@/lib/format"
 import type { OpticalDrive } from "@/lib/types"
@@ -94,7 +95,7 @@ export function BurnDialog({ open, trackIds, onOpenChange }: { open: boolean; tr
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!busy) onOpenChange(next) }}>
-      <DialogContent>
+      <DialogContent wide>
         <DialogHeader>
           <DialogTitle>Burn a CD or a DVD</DialogTitle>
         </DialogHeader>
@@ -121,7 +122,7 @@ export function BurnDialog({ open, trackIds, onOpenChange }: { open: boolean; tr
         </div>
         <label className="mt-4 block text-sm">
           Drive
-          <select className="mt-1 h-11 w-full cursor-pointer rounded-md border border-white/10 bg-black px-3 text-foreground [color-scheme:dark]" value={device} onChange={(event) => setDevice(event.target.value)}>
+          <select className="mt-1 h-11 w-full cursor-pointer rounded-md border border-white/10 bg-black px-3 text-foreground scheme-dark" value={device} onChange={(event) => setDevice(event.target.value)}>
             {drives.length ? null : <option value="">No optical drive found</option>}
             {drives.map((drive) => (
               <option key={drive.device} value={drive.device}>{drive.label} · {drive.device}{drive.size ? ` · ${drive.size}` : ""}</option>
@@ -134,7 +135,7 @@ export function BurnDialog({ open, trackIds, onOpenChange }: { open: boolean; tr
         </label>
         {tooBig ? <p className="mt-3 text-sm text-red-300">{limit}</p> : null}
         {progress ? <p className="mt-3 text-sm">{progress}</p> : null}
-        {error ? <p className="mt-3 text-sm text-red-300">{error}</p> : null}
+        <DiscError error={error} />
         <div className="mt-4 flex justify-end">
           <Button disabled={busy || !confirm || !device || !trackIds.length || tooBig} onClick={() => void burn()}>
             {busy ? <CubeLoader size={18} label={progress || "Writing the disc"} /> : null}

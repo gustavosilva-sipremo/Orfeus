@@ -1,4 +1,4 @@
-import { BarChart3, FolderArchive, Images, Keyboard, Library, Music, Plus, Podcast, Star, Trash2, X } from "lucide-react"
+import { BarChart3, FolderArchive, Images, Library, Music, Plus, Podcast, Star, Trash2, X } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { Cover } from "@/components/Cover"
@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input"
 import * as api from "@/lib/api"
 import { tally } from "@/lib/format"
 import { message } from "@/lib/utils"
-import { version } from "../../package.json"
 import { useLibrary, type View } from "@/stores/library"
 
 function sameView(left: View, right: View) {
@@ -39,7 +38,6 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const [openShelf, setOpenShelf] = useState(false)
   const [name, setName] = useState("")
   const [shelfName, setShelfName] = useState("")
-  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   if (pendingView && sectionReady && sameView(view, pendingView)) {
     lockRef.current = false
     setPendingView(null)
@@ -194,7 +192,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <h1 className="serif text-4xl italic">Orfeus</h1>
         </div>
       </div>
-      <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-y-contain px-3 [scrollbar-color:rgba(255,255,255,0.28)_transparent] scrollbar-thin">
+      <nav data-wheel-scroll="" className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-y-contain px-3 [scrollbar-color:rgba(255,255,255,0.28)_transparent] scrollbar-thin">
         <div className="flex items-center justify-between px-3">
           <span className="text-xs tracking-[0.22em] text-muted-foreground uppercase">Libraries</span>
           <Button variant="ghost" size="icon" onClick={() => setOpenShelf(true)} aria-label="New library">
@@ -236,28 +234,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <FolderArchive className="size-5" />
           Import playlist
         </Button>
-        <Button variant="ghost" className="w-full" onClick={() => setShortcutsOpen(true)}>
-          <Keyboard className="size-5" />
-          Shortcuts
-        </Button>
-        <p className="px-1 text-[11px] tracking-wide text-white/40">v{version}</p>
       </div>
-      <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Shortcuts</DialogTitle>
-          </DialogHeader>
-          <ul className="space-y-2 text-base">
-            <li className="flex justify-between gap-4"><span>Play or pause</span><span className="text-muted-foreground">Space</span></li>
-            <li className="flex justify-between gap-4"><span>Back 5 seconds</span><span className="text-muted-foreground">Left</span></li>
-            <li className="flex justify-between gap-4"><span>Forward 5 seconds</span><span className="text-muted-foreground">Right</span></li>
-            <li className="flex justify-between gap-4"><span>Previous track</span><span className="text-muted-foreground">Alt + Left</span></li>
-            <li className="flex justify-between gap-4"><span>Next track</span><span className="text-muted-foreground">Alt + Right</span></li>
-            <li className="flex justify-between gap-4"><span>Listing size</span><span className="text-muted-foreground">Alt + scroll</span></li>
-            <li className="flex justify-between gap-4"><span>Track actions</span><span className="text-muted-foreground">Right click</span></li>
-          </ul>
-        </DialogContent>
-      </Dialog>
       <Dialog open={openNew} onOpenChange={setOpenNew}>
         <DialogContent>
           <DialogHeader>

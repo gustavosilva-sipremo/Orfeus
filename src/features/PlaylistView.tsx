@@ -270,7 +270,7 @@ function TrackPicker({
   return (
     <>
       <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search title, artist, or album" aria-label="Filter tracks" maxLength={80} />
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div data-wheel-scroll="" className="min-h-0 flex-1 overflow-auto">
         {visible.length === 0 ? (
           <p className="px-2 py-6 text-sm text-muted-foreground">{tracks.length === 0 ? "The library is empty." : "No tracks match that search."}</p>
         ) : (

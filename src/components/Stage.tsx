@@ -299,7 +299,7 @@ function LyricStage({ trackId }: { trackId: string }) {
         </div>
       ) : null}
       {note ? <p className="mt-3 text-sm text-gold">{note}</p> : null}
-      <div ref={scrollerRef} className="mt-4 min-h-0 flex-1 space-y-3 overflow-auto pr-2">
+      <div ref={scrollerRef} data-wheel-scroll="" className="mt-4 min-h-0 flex-1 space-y-3 overflow-auto pr-2">
         {lines.length === 0 ? <p className="text-2xl text-white/70">No lyrics for this track.</p> : null}
         {lines.map((line, index) => {
           const active = index === current

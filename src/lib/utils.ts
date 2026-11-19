@@ -6,7 +6,24 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function message(error: unknown) {
-  if (error instanceof Error && error.message) return error.message
+  const text = describe(error).trim()
+  return text || "Something went wrong."
+}
+
+function describe(error: unknown): string {
   if (typeof error === "string") return error
-  return "Something went wrong."
+  if (error instanceof Error) {
+    const cause = error.cause == null ? "" : describe(error.cause).trim()
+    if (!error.message) return cause
+    if (!cause || error.message.includes(cause)) return error.message
+    return `${error.message}\n\n${cause}`
+  }
+  if (error && typeof error === "object") {
+    try {
+      return JSON.stringify(error, null, 2)
+    } catch {
+      return String(error)
+    }
+  }
+  return String(error ?? "")
 }

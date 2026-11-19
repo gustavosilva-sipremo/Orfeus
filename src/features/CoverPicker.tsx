@@ -32,7 +32,7 @@ export function CoverPicker({ open, onOpenChange, onPick }: { open: boolean; onO
           <DialogTitle>Saved covers</DialogTitle>
         </DialogHeader>
         {covers.length === 0 ? <p className="text-sm text-muted-foreground">No saved covers yet. Paste or drop an image, or choose a file.</p> : null}
-        <div className="grid max-h-[min(28rem,60vh)] grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-2 overflow-auto pr-1">
+        <div data-wheel-scroll="" className="grid max-h-[min(28rem,60vh)] grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-2 overflow-auto pr-1">
           {covers.map((cover) => (
             <button
               key={cover.path}

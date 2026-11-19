@@ -1,49 +1,6 @@
 import { useEffect, useRef } from "react"
-import { usePlayer } from "@/stores/player"
 
 export const quietBands = Array.from({ length: 64 }, () => 0.06)
-
-export function SpectrumLine({ bands, className }: { bands: number[]; className?: string }) {
-  const ref = useRef<HTMLCanvasElement>(null)
-  useEffect(() => {
-    const canvas = ref.current
-    if (!canvas) return
-    const context = canvas.getContext("2d")
-    if (!context) return
-    const width = canvas.clientWidth
-    const height = canvas.clientHeight
-    const ratio = window.devicePixelRatio || 1
-    const nextWidth = Math.max(1, Math.floor(width * ratio))
-    const nextHeight = Math.max(1, Math.floor(height * ratio))
-    if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
-      canvas.width = nextWidth
-      canvas.height = nextHeight
-    }
-    context.setTransform(ratio, 0, 0, ratio, 0, 0)
-    context.clearRect(0, 0, width, height)
-    context.beginPath()
-    bands.forEach((band, index) => {
-      const x = (index / Math.max(bands.length - 1, 1)) * width
-      const y = height * 0.72 - band * height * 0.62
-      if (index === 0) context.moveTo(x, y)
-      else context.lineTo(x, y)
-    })
-    context.strokeStyle = "rgba(245, 245, 245, 0.92)"
-    context.lineWidth = 1.5
-    context.stroke()
-  }, [bands])
-  return <canvas ref={ref} className={className ?? "h-9 w-28"} />
-}
-
-export function RowSpectrum({ active, className }: { active: boolean; className?: string }) {
-  if (!active) return <SpectrumLine bands={quietBands} className={className ?? "h-8 w-full"} />
-  return <LiveRowSpectrum className={className} />
-}
-
-function LiveRowSpectrum({ className }: { className?: string }) {
-  const bands = usePlayer((state) => state.bands)
-  return <SpectrumLine bands={bands.length ? bands : quietBands} className={className ?? "h-8 w-full"} />
-}
 
 export function StageCanvas({ bands }: { bands: number[] }) {
   const ref = useRef<HTMLCanvasElement>(null)

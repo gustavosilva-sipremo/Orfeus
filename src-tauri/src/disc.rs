@@ -35,12 +35,16 @@ pub fn list_drives() -> Result<Vec<OpticalDrive>, String> {
     let output = Command::new("lsblk")
         .args(["-J", "-o", "NAME,SIZE,MODEL"])
         .output()
-        .map_err(|_| "Could not list drives. Install util-linux (lsblk).".to_string())?;
+        .map_err(|err| format!("Could not list drives. Install util-linux (lsblk).\n\n{err}"))?;
     if !output.status.success() {
-        return Err("Could not list optical drives.".into());
+        return Err(with_output("Could not list optical drives.", &output));
     }
-    let parsed: Lsblk = serde_json::from_slice(&output.stdout)
-        .map_err(|_| "Could not read the drive list.".to_string())?;
+    let parsed: Lsblk = serde_json::from_slice(&output.stdout).map_err(|err| {
+        with_text(
+            &format!("Could not read the drive list. {err}"),
+            &String::from_utf8_lossy(&output.stdout),
+        )
+    })?;
     let mut drives = Vec::new();
     collect(&parsed.blockdevices, &mut drives);
     Ok(drives)
@@ -152,7 +156,7 @@ fn burn(app: &AppHandle, dir: &Path, kind: &str, device: &str, jobs: &[Job]) -> 
         };
         let source = if kind == "audio" {
             let wav = dir.join(format!("{index:02}.wav"));
-            let status = crate::util::command("ffmpeg")
+            let output = crate::util::command("ffmpeg")
                 .args([
                     "-y",
                     "-i",
@@ -165,10 +169,10 @@ fn burn(app: &AppHandle, dir: &Path, kind: &str, device: &str, jobs: &[Job]) -> 
                     "pcm_s16le",
                 ])
                 .arg(&wav)
-                .status()
-                .map_err(|_| "Install ffmpeg to burn an audio CD.".to_string())?;
-            if !status.success() {
-                return Err(format!("Could not prepare {}.", job.title));
+                .output()
+                .map_err(|err| format!("Install ffmpeg to burn an audio CD.\n\n{err}"))?;
+            if !output.status.success() {
+                return Err(with_output(&format!("Could not prepare {}.", job.title), &output));
             }
             wav
         } else {
@@ -234,6 +238,23 @@ fn command_text(output: &std::process::Output) -> String {
     )
 }
 
+fn with_output(summary: &str, output: &std::process::Output) -> String {
+    with_text(summary, &command_text(output))
+}
+
+fn with_text(summary: &str, text: &str) -> String {
+    let full = text.trim();
+    if full.is_empty() || full == summary {
+        summary.to_string()
+    } else {
+        format!("{summary}\n\n{full}")
+    }
+}
+
+fn full_failure(text: &str) -> String {
+    with_text(&xorriso_reason(text), text)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Medium {
     Blank,
@@ -245,7 +266,7 @@ fn medium_state(device: &str) -> Result<Medium, String> {
     let output = crate::util::command("xorriso")
         .args(["-outdev", &burn_target(device), "-toc"])
         .output()
-        .map_err(|_| "Install xorriso to burn a disc.".to_string())?;
+        .map_err(|err| format!("Install xorriso to burn a disc.\n\n{err}"))?;
     classify_medium(&command_text(&output), output.status.success())
 }
 
@@ -256,7 +277,7 @@ fn classify_medium(text: &str, success: bool) -> Result<Medium, String> {
         || lower.contains("cannot load")
         || lower.contains("no such device")
     {
-        return Err("Put a disc in the drive and close the tray.".into());
+        return Err(with_text("Put a disc in the drive and close the tray.", text));
     }
     if lower.contains("is blank") {
         return Ok(Medium::Blank);
@@ -267,7 +288,7 @@ fn classify_medium(text: &str, success: bool) -> Result<Medium, String> {
     if success {
         return Ok(Medium::Unknown);
     }
-    Err(xorriso_reason(text))
+    Err(full_failure(text))
 }
 
 fn blank_failure(message: &str) -> bool {
@@ -279,11 +300,11 @@ fn run_xorriso(args: &[String]) -> Result<(), String> {
     let output = crate::util::command("xorriso")
         .args(args)
         .output()
-        .map_err(|_| "Install xorriso to burn a disc.".to_string())?;
+        .map_err(|err| format!("Install xorriso to burn a disc.\n\n{err}"))?;
     if output.status.success() {
         return Ok(());
     }
-    Err(xorriso_reason(&command_text(&output)))
+    Err(full_failure(&command_text(&output)))
 }
 
 fn xorriso_reason(text: &str) -> String {
@@ -453,11 +474,12 @@ pub fn list_drives() -> Result<Vec<OpticalDrive>, String> {
             "$OutputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; Get-CimInstance Win32_CDROMDrive | Select-Object Drive,DeviceID,Name,MediaType | ConvertTo-Json -Compress",
         ])
         .output()
-        .map_err(|_| "Could not list optical drives.".to_string())?;
+        .map_err(|err| format!("Could not list optical drives.\n\n{err}"))?;
     if !output.status.success() {
-        return Err("Could not list optical drives.".into());
+        return Err(with_output("Could not list optical drives.", &output));
     }
-    drives_from_windows_json(&console_text(&output.stdout))
+    let text = console_text(&output.stdout);
+    drives_from_windows_json(&text).map_err(|err| with_text(&err, &text))
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
@@ -525,7 +547,7 @@ fn audio_track_count(device: &str) -> Result<Option<usize>, String> {
         return Ok(Some(count));
     }
     if text.to_lowercase().contains("unable to open") || text.to_lowercase().contains("no disc") {
-        return Err("Put a disc in the drive and close the tray.".into());
+        return Err(with_text("Put a disc in the drive and close the tray.", &text));
     }
     Ok(None)
 }
@@ -552,13 +574,13 @@ fn rip_cdda(app: &AppHandle, device: &str, count: usize, dir: &Path) -> Result<V
     for index in 1..=count {
         let _ = app.emit("disc://progress", format!("Reading track {index} of {count}"));
         let wav = dir.join(format!("{index:02}.wav"));
-        let status = crate::util::command("cdparanoia")
+        let output = crate::util::command("cdparanoia")
             .args(["-d", device, "-w", "--", &index.to_string()])
             .arg(&wav)
-            .status()
-            .map_err(|_| "Install cdparanoia to read an audio CD.".to_string())?;
-        if !status.success() || !wav.is_file() {
-            return Err(format!("Could not read track {index}."));
+            .output()
+            .map_err(|err| format!("Install cdparanoia to read an audio CD.\n\n{err}"))?;
+        if !output.status.success() || !wav.is_file() {
+            return Err(with_output(&format!("Could not read track {index}."), &output));
         }
         let flac = dir.join(format!("{index:02}.flac"));
         let encoded = crate::util::command("ffmpeg")
@@ -609,7 +631,7 @@ fn mount_disc(device: &str) -> Result<PathBuf, String> {
     let output = crate::util::command("udisksctl")
         .args(["mount", "-b", device])
         .output()
-        .map_err(|_| "Could not open this data disc. Install udisks.".to_string())?;
+        .map_err(|err| format!("Could not open this data disc. Install udisks.\n\n{err}"))?;
     let text = command_text(&output);
     if let Some(path) = text.split(" at ").nth(1) {
         let path = PathBuf::from(path.trim());
@@ -620,14 +642,17 @@ fn mount_disc(device: &str) -> Result<PathBuf, String> {
     if let Some(path) = mounted_at(device)? {
         return Ok(path);
     }
-    Err("This disc has no CD audio and could not be opened as a data disc.".into())
+    Err(with_text(
+        "This disc has no CD audio and could not be opened as a data disc.",
+        &text,
+    ))
 }
 
 fn mounted_at(device: &str) -> Result<Option<PathBuf>, String> {
     let output = crate::util::command("findmnt")
         .args(["-nr", "-o", "TARGET", "-S", device])
         .output()
-        .map_err(|_| "Could not see where the disc is mounted.".to_string())?;
+        .map_err(|err| format!("Could not see where the disc is mounted.\n\n{err}"))?;
     let text = String::from_utf8_lossy(&output.stdout);
     let path = text.lines().find_map(|line| {
         let path = PathBuf::from(line.trim());
@@ -703,6 +728,15 @@ mod tests {
     fn xorriso_reason_skips_the_abort_wrapper() {
         let text = "FAILURE : Blanking failed\nxorriso : aborting : -abort_on 'FAILURE' encountered 'FAILURE'\n";
         assert_eq!(xorriso_reason(text), "FAILURE : Blanking failed");
+    }
+
+    #[test]
+    fn disc_errors_keep_the_whole_tool_log() {
+        let text = "FAILURE : Blanking failed\nxorriso : aborting : -abort_on 'FAILURE' encountered 'FAILURE'\nlibburn : SCSI error on write\n";
+        let message = full_failure(text);
+        assert!(message.starts_with("FAILURE : Blanking failed"));
+        assert!(message.contains("libburn : SCSI error on write"));
+        assert!(message.contains("aborting"));
     }
 
     #[test]

@@ -32,7 +32,7 @@ export function TrashView() {
           <p className="mt-2 max-w-sm text-base text-muted-foreground">Tracks you remove from a library stay here until you restore them or delete the file.</p>
         </div>
       ) : (
-        <ul className="min-h-0 flex-1 space-y-1 overflow-auto px-3 pt-4 pb-4 sm:px-5">
+        <ul data-wheel-scroll="" className="min-h-0 flex-1 space-y-1 overflow-auto px-3 pt-4 pb-4 sm:px-5">
           {trash.map((track) => (
             <li key={track.id} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-white/5">
               <Cover path={track.coverPath} className="size-12 rounded" />

@@ -199,7 +199,7 @@ export function EditorSheet() {
             : "Changes stay in Orfeus. The original file changes only when you export."}
         </p>
         {!track ? <p className="mt-6 text-base text-muted-foreground">This track is no longer in the library.</p> : null}
-        <div className="mt-5 flex min-h-0 flex-1 flex-col gap-5 overflow-auto pr-1">
+        <div data-wheel-scroll="" className="mt-5 flex min-h-0 flex-1 flex-col gap-5 overflow-auto pr-1">
           <section
             className={`glass space-y-3 rounded-2xl p-4 ${coverDropping ? "ring-2 ring-white" : ""}`}
             onDragEnter={(event) => {
