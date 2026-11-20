@@ -122,10 +122,10 @@ Set-ExecutionPolicy -Scope Process Bypass
 The script installs the npm packages and builds the setup wizard:
 
 ```text
-src-tauri\target\release\bundle\nsis\Orfeus_1.7.0_x64-setup.exe
+src-tauri\target\release\bundle\nsis\Orfeus_1.7.1_x64-setup.exe
 ```
 
-The file name follows `version` in `src-tauri/tauri.conf.json`. The wizard asks you to accept the terms, then whether to install for you or for everyone, then checks this PC. It installs Python, FFmpeg, and xorriso only when they are missing, and adds them to the user PATH. WebView2 is downloaded when Windows does not already have it. The setup is unsigned: if SmartScreen appears, choose More info, then Run anyway. The setup icon and the uninstall icon are the Orfeus icon.
+The file name follows `version` in `src-tauri/tauri.conf.json`. If Orfeus is already installed, the wizard finds that install (the app id is `app.orfeus.desktop`) and replaces it with this version. Library files stay in the app data folder. The wizard asks you to accept the terms, then whether to install for you or for everyone, then checks this PC. It installs Python, FFmpeg, and xorriso only when they are missing, and adds them to the user PATH. WebView2 is downloaded when Windows does not already have it. The setup is unsigned: if SmartScreen appears, choose More info, then Run anyway. The setup icon and the uninstall icon are the Orfeus icon.
 
 YouTube import needs Python (`py`, `python`, or `python3`) and `ffmpeg` on the PATH. Burning needs `xorriso` and, for an audio CD, `ffmpeg`. The drive list uses Windows PowerShell. A blank disc is left alone. A written disc is erased only when it can be rewritten. Reading an audio CD from Windows needs `cdparanoia` on the PATH. A data disc that is already mounted contributes its music files, and the tracks are added to the library under a new playlist.
 

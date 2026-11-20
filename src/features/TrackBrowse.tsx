@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
 import { artistLabel, formatBytes, formatDuration, isRecent, sourceLabel } from "@/lib/format"
+import { usePlayer } from "@/stores/player"
 import type { Track } from "@/lib/types"
 
 type Mode = "list" | "cards"
@@ -147,6 +148,7 @@ export function TrackBrowse({
     scroller?.scrollTo({ top: 0 })
   }
 
+  const playing = usePlayer((state) => state.playing)
   const actionSlot = Boolean(actions || (reorder && sort === "manual"))
   const columns = actionSlot ? "auto minmax(0,1fr) auto auto" : "auto minmax(0,1fr) auto"
 
@@ -214,8 +216,7 @@ export function TrackBrowse({
                 <Cover path={track.coverPath} className={`relative self-center rounded ${currentId === track.id ? "ring-2 ring-white" : ""}`} style={{ width: cover, height: cover }} />
                 <span className="relative min-w-0 self-center">
                   <span className={`block truncate ${size > 60 ? "text-lg" : "text-base"}`}>{isRecent(track.addedAt) ? <span className={newTag}>New</span> : null}{track.title}</span>
-                  {currentId === track.id ? <span className="text-xs tracking-[0.18em] text-white uppercase">Playing</span> : null}
-                  {Math.abs(track.gain - 1) > 0.02 ? <span className="ml-2 text-xs text-muted-foreground">{Math.round(track.gain * 100)}%</span> : null}
+                  {Math.abs(track.gain - 1) > 0.02 ? <span className="text-xs text-muted-foreground">{Math.round(track.gain * 100)}%</span> : null}
                   <span className="block truncate text-sm text-muted-foreground">
                     {artistLabel(track.artist)}
                     {track.album ? ` · ${track.album}` : ""}
@@ -223,9 +224,12 @@ export function TrackBrowse({
                   </span>
                   <span className="block truncate text-xs text-white/45" title={track.path}>{sourceLabel(track)}</span>
                 </span>
-                <span className="relative self-center text-right text-sm text-muted-foreground tabular-nums">
-                  {formatDuration(track.durationMs)}
-                  <span className="block">{formatBytes(track.sizeBytes)}</span>
+                <span className="relative flex items-center justify-end gap-2 self-center text-right text-sm text-muted-foreground tabular-nums">
+                  {currentId === track.id && playing ? <EqBars /> : null}
+                  <span>
+                    {formatDuration(track.durationMs)}
+                    <span className="block">{formatBytes(track.sizeBytes)}</span>
+                  </span>
                 </span>
                 {actionSlot ? (
                   <span className="relative flex items-center gap-1 self-center" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
@@ -245,7 +249,7 @@ export function TrackBrowse({
             return (
             <li key={track.id}>
               <div
-                className={`cursor-pointer rounded-2xl p-2 hover:bg-white/10 ${currentId === track.id ? "glass ring-1 ring-white/50" : ""} ${isRecent(track.addedAt) && currentId !== track.id ? "ring-1 ring-gold/35" : ""}`}
+                className={`relative cursor-pointer rounded-2xl p-2 hover:bg-white/10 ${currentId === track.id ? "glass ring-1 ring-white/50" : ""} ${isRecent(track.addedAt) && currentId !== track.id ? "ring-1 ring-gold/35" : ""}`}
                 onClick={() => onOpen(visible, index)}
                 onContextMenu={(event) => openMenu(track, event)}
                 onKeyDown={(event) => {
@@ -263,11 +267,13 @@ export function TrackBrowse({
                     </span>
                   ) : null}
                 </div>
-                {currentId === track.id ? <span className="mt-2 block text-xs tracking-[0.18em] text-white uppercase">Playing</span> : null}
-                <span className={`block truncate ${size > 60 ? "text-lg" : "text-base"} ${currentId === track.id ? "" : "mt-2"}`}>{isRecent(track.addedAt) ? <span className={newTag}>New</span> : null}{track.title}</span>
-                <span className="block truncate text-sm text-muted-foreground">{artistLabel(track.artist)}</span>
-                <span className="block truncate text-xs text-white/45" title={track.path}>{sourceLabel(track)}</span>
-                <span className="text-sm text-muted-foreground tabular-nums">{formatDuration(track.durationMs)} · {formatBytes(track.sizeBytes)}</span>
+                <div className="mt-2 min-w-0">
+                  <span className={`block truncate ${size > 60 ? "text-lg" : "text-base"}`}>{isRecent(track.addedAt) ? <span className={newTag}>New</span> : null}{track.title}</span>
+                  <span className="block truncate text-sm text-muted-foreground">{artistLabel(track.artist)}</span>
+                  <span className="block truncate text-xs text-white/45" title={track.path}>{sourceLabel(track)}</span>
+                  <span className="block pr-6 text-sm text-muted-foreground tabular-nums">{formatDuration(track.durationMs)} · {formatBytes(track.sizeBytes)}</span>
+                </div>
+                {currentId === track.id && playing ? <span className="absolute right-3 bottom-2"><EqBars /></span> : null}
               </div>
             </li>
             )
@@ -286,5 +292,15 @@ export function TrackBrowse({
         </div>
       ) : null}
     </div>
+  )
+}
+
+function EqBars() {
+  return (
+    <span className="eq-bars" aria-label="Playing">
+      <span />
+      <span />
+      <span />
+    </span>
   )
 }

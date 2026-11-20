@@ -81,6 +81,39 @@
     @apply bg-background text-foreground font-sans antialiased;
     background-color: #000000;
   }
+  .eq-bars {
+    display: inline-flex;
+    height: 1.25rem;
+    flex: none;
+    align-items: flex-end;
+    gap: 3px;
+    overflow: hidden;
+  }
+  .eq-bars span {
+    width: 3px;
+    height: 100%;
+    transform: scaleY(0.3);
+    transform-origin: bottom;
+    border-radius: 1px;
+    background: #f5f5f5;
+    animation: eq-rise 0.85s ease-in-out infinite;
+    will-change: transform;
+  }
+  .eq-bars span:nth-child(2) {
+    animation-delay: 0.18s;
+  }
+  .eq-bars span:nth-child(3) {
+    animation-delay: 0.36s;
+  }
+  @keyframes eq-rise {
+    0%,
+    100% {
+      transform: scaleY(0.28);
+    }
+    50% {
+      transform: scaleY(1);
+    }
+  }
   button,
   [role="button"],
   select,

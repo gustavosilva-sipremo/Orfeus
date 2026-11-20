@@ -4,7 +4,6 @@ import { Cover } from "@/components/Cover"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { LibraryMenu } from "@/features/LibraryMenu"
 import { artistLabel, crossfadeLabel, formatClock, loopHint, loopLabel, rateLabel } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { LoopMode } from "@/lib/types"
@@ -88,7 +87,6 @@ export function PlayerBar() {
             </Button>
           </Hint>
           <VolumeControl />
-          <LibraryMenu />
         </div>
         <div className="flex w-full max-w-xl items-center gap-2 text-sm text-muted-foreground">
           <span className="w-12 tabular-nums">{formatClock(scrub == null ? position : scrub * duration)}</span>
@@ -158,7 +156,7 @@ function VolumeControl() {
   const [remembered, setRemembered] = useState(volume || 0.8)
   const Icon = volume <= 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2
   return (
-    <div className="flex w-28 shrink-0 items-center gap-1">
+    <div className="flex w-40 shrink-0 items-center gap-1">
       <Button
         variant="ghost"
         size="icon"
@@ -175,6 +173,7 @@ function VolumeControl() {
         <Icon className="size-5" />
       </Button>
       <Slider max={100} value={[Math.round(volume * 100)]} aria-label="Volume" onValueChange={([value]) => void setVolume((value ?? 0) / 100)} />
+      <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">{Math.round(volume * 100)}%</span>
     </div>
   )
 }

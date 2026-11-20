@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Slider } from "@/components/ui/slider"
-import { requestExport, requestFileImport, requestFolderImport } from "@/features/LibraryMenu"
+import { LibraryMenu, requestExport, requestFileImport, requestFolderImport } from "@/features/LibraryMenu"
 import { TrackBrowse } from "@/features/TrackBrowse"
 import * as api from "@/lib/api"
 import { useExportDir } from "@/lib/export-dir"
@@ -86,6 +86,7 @@ export function LibraryView() {
           <h2 className="serif truncate text-2xl sm:text-3xl">{shelfName}</h2>
           <p className="text-base text-muted-foreground">{ready ? `${tracks.length} tracks · ${tally(tracks)}` : "Opening the library…"}</p>
         </div>
+        <LibraryMenu />
       </header>
       {exportDir ? (
         <div className="flex flex-wrap items-center gap-2 px-4 pb-2 text-sm text-muted-foreground sm:px-6">
